@@ -32,8 +32,9 @@ echo.
 echo ⚡ ScanLate v3 — Starting...
 echo.
 
-:: Start ScanLate API Gateway on port 8745 (FastAPI starts the engine automatically in lifespan)
-
+:: ─── Auto-Heal & Check API Dependencies ─────────────
+echo Checking API dependencies...
+"%PYTHON%" -m pip install -q -r "%ROOT%server\requirements.txt"
 :: Start ScanLate API server (port 8745)
 echo Starting ScanLate API Gateway on port 8745...
 :: ใน V1/V3 server/main.py จะเป็น FastAPI app ของเรา

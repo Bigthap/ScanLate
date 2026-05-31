@@ -84,7 +84,7 @@ if exist "engine\manga-image-translator\requirements.txt" (
 
 :: [6/7] Installing dependencies & Engine dependencies
 echo [6/7] Installing FastAPI, LiteLLM and other API dependencies...
-"runtime\python\python.exe" -m pip install fastapi uvicorn httpx litellm python-multipart python-dotenv --cache-dir "%PIP_CACHE_DIR%"
+"runtime\python\python.exe" -m pip install -r server\requirements.txt --cache-dir "%PIP_CACHE_DIR%"
 
 echo      Installing manga-image-translator dependencies...
 "runtime\python\python.exe" -m pip install -r engine/manga-image-translator/requirements.txt --cache-dir "%PIP_CACHE_DIR%"

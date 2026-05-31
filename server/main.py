@@ -126,6 +126,46 @@ async def get_status():
 # TRANSLATION ENDPOINTS
 # ──────────────────────────────────────────────────────────────────────
 
+def merge_close_regions(regions: list, max_dist_x=80, max_dist_y=60) -> list:
+    """Merges bounding boxes that are close to each other to form a single text block."""
+    if not regions:
+        return []
+        
+    # Sort regions top-to-bottom, then left-to-right
+    sorted_regions = sorted(regions, key=lambda r: (r["minY"], r["minX"]))
+    merged = []
+    
+    for r in sorted_regions:
+        if not merged:
+            merged.append(r)
+            continue
+            
+        merged_with_something = False
+        for m in merged:
+            # Check overlap or proximity
+            x_overlap = max(r["minX"], m["minX"]) < min(r["maxX"], m["maxX"]) + max_dist_x
+            y_overlap = max(r["minY"], m["minY"]) < min(r["maxY"], m["maxY"]) + max_dist_y
+            
+            if x_overlap and y_overlap:
+                m["minX"] = min(m["minX"], r["minX"])
+                m["minY"] = min(m["minY"], r["minY"])
+                m["maxX"] = max(m["maxX"], r["maxX"])
+                m["maxY"] = max(m["maxY"], r["maxY"])
+                
+                orig_r = r.get("original_text", "").strip()
+                if orig_r:
+                    m["original_text"] = m.get("original_text", "") + " " + orig_r
+                    m["original_text"] = m["original_text"].strip()
+                    
+                merged_with_something = True
+                break
+                
+        if not merged_with_something:
+            merged.append(r)
+            
+    return merged
+
+
 @app.post("/translate")
 async def translate_image(
     image: Optional[UploadFile] = File(None),
@@ -210,6 +250,7 @@ async def translate_image(
             if ocr_engine_type == "llm" and regions:
                 from server.engine.gemini_ocr import extract_text_with_gemini
                 logger.info("Using LLM OCR for text extraction...")
+                regions = merge_close_regions(regions)
                 regions = await extract_text_with_gemini(image_bytes, regions)
             elif ocr_engine_type == "win" and regions:
                 from server.engine.win_ocr import extract_text_with_win_ocr
@@ -361,6 +402,7 @@ async def translate_stream(
                 if use_gemini_ocr_bool and regions:
                     from server.engine.gemini_ocr import extract_text_with_gemini
                     logger.info("Using Gemini for text extraction...")
+                    regions = merge_close_regions(regions)
                     regions = await extract_text_with_gemini(
                         image_bytes, regions,
                         ocr_provider=ocr_provider or None,

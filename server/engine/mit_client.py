@@ -15,13 +15,17 @@ class EngineClient:
         Sends an image to the manga-image-translator server to run OCR and text detection.
         Returns a list of text regions (bounding boxes, original text, colors, angles).
         """
+        # Check if source_lang is auto
+        is_auto = source_lang.lower() == "auto"
+
         # Map source_lang (ja, ko, zh, en) to engine expected codes if needed
         # Standard ja -> ja, ko -> ko, en -> en, zh -> ch_tra or ch_sim (default zh)
         lang_map = {
             "ja": "JPN",
             "ko": "KOR",
             "zh": "CHS",
-            "en": "ENG"
+            "en": "ENG",
+            "auto": "JPN"  # Fallback target lang for auto mode
         }
         target_engine_lang = lang_map.get(source_lang.lower(), "JPN")
 
@@ -32,7 +36,7 @@ class EngineClient:
             "translator": {
                 "translator": "none",
                 "target_lang": target_engine_lang.upper(),
-                "no_text_lang_skip": True
+                "no_text_lang_skip": False if is_auto else True
             },
             "inpainter": {
                 "inpainter": "none"

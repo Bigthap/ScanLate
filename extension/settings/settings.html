@@ -452,16 +452,6 @@
           <p class="section-desc">ปรับแต่งเอนจิ้นสำหรับดึงข้อความออกจากภาพ</p>
         </div>
 
-        <div class="card">
-          <div class="card-label">
-            <span>🧠 ใช้ LLM ช่วยอ่านข้อความ (LLM OCR)</span>
-            <label class="toggle">
-              <input type="checkbox" id="toggle-gemini-ocr">
-              <span class="slider"></span>
-            </label>
-          </div>
-          <p class="input-hint">ใช้ LLM ช่วยอ่านข้อความในภาพ (แม่นยำกว่า แต่กินโควต้า API มากกว่า)</p>
-        </div>
 
         <div class="card" id="card-mit-model">
           <div class="card-label"><span>🔬 Local Model (ใช้งานเมื่อเลือก Local)</span></div>
@@ -487,9 +477,17 @@
               <span class="radio-custom"></span>
               <div>
                 <span class="radio-label">Manga OCR (mocr)</span>
-                <span class="radio-desc">เน้นอ่านญี่ปุ่น — ต้องการ Model เพิ่มเติม</span>
+                <span class="radio-desc">รองรับภาษาญี่ปุ่นได้ดี มีการทำ pre-processing ดีเยี่ยม</span>
               </div>
             </label>
+          </div>
+        </div>
+
+        <div class="card" id="card-ocr-llm-active" style="display: none;">
+          <div style="text-align: center; padding: 20px 0;">
+            <span style="font-size: 24px; display: block; margin-bottom: 10px;">✨</span>
+            <strong style="color: var(--accent);">LLM OCR กำลังทำงาน</strong>
+            <p class="input-hint" style="margin-top: 8px;">คุณเปิดใช้งาน LLM OCR ไว้ในหมวด <b>Advanced Features</b><br>ระบบจะใช้ AI ในการอ่านข้อความแทน Local Model</p>
           </div>
         </div>
 
@@ -534,9 +532,13 @@
                <span class="adv-feature-icon">🧠</span>
               <div>
                 <span class="adv-feature-title">LLM OCR Configuration</span>
-                <span class="adv-feature-subtitle">การตั้งค่าสำหรับ LLM OCR (ทำงานเมื่อเลือก LLM OCR ในหน้าตั้งค่า OCR)</span>
+                <span class="adv-feature-subtitle">ใช้ LLM ช่วยอ่านข้อความในภาพ (แม่นยำกว่า แต่กิน API Quota)</span>
               </div>
             </div>
+            <label class="adv-toggle">
+              <input type="checkbox" id="toggle-gemini-ocr">
+              <span class="adv-toggle-slider"></span>
+            </label>
           </div>
 
           <!-- OCR sub-settings -->

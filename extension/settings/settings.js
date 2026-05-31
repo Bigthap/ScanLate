@@ -383,14 +383,25 @@ function updateOcrEngineVisibility() {
   
   // Show/hide Local Model selector (Hide if using Gemini OCR)
   const mitCard = $("card-mit-model");
+  const llmActiveCard = $("card-ocr-llm-active");
   if (mitCard) {
     mitCard.style.display = useGeminiOcr ? "none" : "block";
   }
+  if (llmActiveCard) {
+    llmActiveCard.style.display = useGeminiOcr ? "block" : "none";
+  }
   
   // Show/hide LLM OCR config (Show if using Gemini OCR)
-  const llmCard = $("adv-ocr-card");
-  if (llmCard) {
-    llmCard.style.display = useGeminiOcr ? "block" : "none";
+  const llmSubSettings = $("ocr-sub-settings");
+  if (llmSubSettings) {
+    if (useGeminiOcr) {
+      llmSubSettings.classList.add("open");
+      llmSubSettings.style.display = "block";
+    } else {
+      llmSubSettings.classList.remove("open");
+      // Optional: Wait for transition before hiding completely
+      setTimeout(() => { if (!llmSubSettings.classList.contains("open")) llmSubSettings.style.display = "none"; }, 400);
+    }
   }
 }
 

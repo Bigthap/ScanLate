@@ -23,9 +23,15 @@ const getTabKey = (tabId) => `tabState_${tabId}`;
 async function getTabState(tabId) {
   const key = getTabKey(tabId);
   const result = await chrome.storage.session.get(key);
-  return result[key] || {
-    profileName: null,
-    sourceLang: "ja",
+  if (result[key]) {
+    return result[key];
+  }
+  
+  // If no tab state, load from global last saved state
+  const globalState = await chrome.storage.local.get(["lastProfileName", "lastSourceLang"]);
+  return {
+    profileName: globalState.lastProfileName || null,
+    sourceLang: globalState.lastSourceLang || "auto",
     status: "idle",
     translatedCount: 0,
     totalCount: 0,
@@ -37,6 +43,14 @@ async function getTabState(tabId) {
 async function setTabState(tabId, state) {
   const key = getTabKey(tabId);
   await chrome.storage.session.set({ [key]: state });
+  
+  // Also save profileName and sourceLang globally as last used
+  const toSave = {};
+  if (state.profileName) toSave.lastProfileName = state.profileName;
+  if (state.sourceLang) toSave.lastSourceLang = state.sourceLang;
+  if (Object.keys(toSave).length > 0) {
+    await chrome.storage.local.set(toSave);
+  }
 }
 
 // Handle message commands from popup or content scripts
@@ -183,6 +197,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
             }).then(() => {
                 Logger.info(`Translation stream complete for ${imageUrl}.`, "ServiceWorker");
+                chrome.tabs.sendMessage(tabId, { 
+                    action: "translateStreamEvent", 
+                    imageUrl: imageUrl, 
+                    event: { type: "stream_closed" } 
+                }).catch(() => {});
             }).catch(err => {
                 Logger.error(`Translation stream failed: ${err.message}`, "ServiceWorker");
                 chrome.tabs.sendMessage(tabId, { 

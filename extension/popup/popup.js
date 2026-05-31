@@ -98,7 +98,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       
       // Restore language
-      langSelect.value = state.sourceLang || "ja";
+      langSelect.value = state.sourceLang || "auto";
       
       // Restore debug mode
       chkDebugMode.checked = !!state.debugMode;

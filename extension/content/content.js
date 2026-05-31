@@ -205,7 +205,7 @@
   // Binary search auto-font sizing to fit speech text inside box boundaries
   function calculateOptimalFontSize(text, boxWidth, boxHeight) {
     let low = 7;
-    let high = 40;
+    let high = 80;
     let optimal = 11;
     
     // Create temporary offscreen element for measurement
@@ -257,7 +257,16 @@
     wrapper._initialWidth = imgElement.clientWidth || naturalWidth;
     
     detectedTexts.forEach((box, index) => {
-      const [minX, minY, maxX, maxY] = box.bbox;
+      let [minX, minY, maxX, maxY] = box.bbox;
+      
+      // Inflate bounding box slightly to ensure original text is fully covered
+      const paddingX = 8;
+      const paddingY = 6;
+      minX = Math.max(0, minX - paddingX);
+      minY = Math.max(0, minY - paddingY);
+      maxX = Math.min(naturalWidth, maxX + paddingX);
+      maxY = Math.min(naturalHeight, maxY + paddingY);
+
       const widthPercent = ((maxX - minX) / naturalWidth) * 100;
       const heightPercent = ((maxY - minY) / naturalHeight) * 100;
       const leftPercent = (minX / naturalWidth) * 100;
@@ -361,10 +370,10 @@
         
         delete currentTranslationStreams[imageUrl];
         if (streamState.resolve) streamState.resolve();
-      } else if (event.type === "error") {
+      } else if (event.type === "error" || event.type === "stream_closed") {
         if (streamState.loader) streamState.loader.remove();
         delete currentTranslationStreams[imageUrl];
-        if (streamState.reject) streamState.reject(new Error(event.message));
+        if (streamState.reject) streamState.reject(new Error(event.message || "Translation interrupted by server disconnection"));
       }
     }
   });
@@ -440,7 +449,7 @@
       ]);
       if (stored.ocrModel) ocrModel = stored.ocrModel;
       useMultimodal = !!stored.useMultimodal;
-      useGeminiOcr = !!stored.useGeminiOcr;
+      useGeminiOcr = stored.useGeminiOcr !== undefined ? !!stored.useGeminiOcr : true;
       useAutoGlossary = !!stored.useAutoGlossary;
       if (stored.ocrProvider)   ocrProvider   = stored.ocrProvider;
       if (stored.ocrModelSlug)  ocrModelSlug  = stored.ocrModelSlug;

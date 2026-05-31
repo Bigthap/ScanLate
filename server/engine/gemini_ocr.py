@@ -3,6 +3,7 @@ import base64
 import logging
 import json
 import re
+import os
 from io import BytesIO
 from PIL import Image
 import litellm

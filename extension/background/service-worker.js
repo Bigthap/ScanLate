@@ -73,16 +73,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         case "updateTabState": {
-          const currentState = await getTabState(tabId);
-          const newState = { ...currentState, ...message.updates };
-          await setTabState(tabId, newState);
+          // Use an async lock to prevent race conditions from concurrent background updates
+          if (!globalThis.tabStateLocks) globalThis.tabStateLocks = {};
+          if (!globalThis.tabStateLocks[tabId]) globalThis.tabStateLocks[tabId] = Promise.resolve();
           
-          // Notify any listening popups about state change
-          chrome.runtime.sendMessage({ action: "tabStateChanged", tabId, state: newState }).catch(() => {
-            // Silence errors when popup is closed and no listener exists
+          globalThis.tabStateLocks[tabId] = globalThis.tabStateLocks[tabId].then(async () => {
+              const currentState = await getTabState(tabId);
+              const newState = { ...currentState, ...message.updates };
+              await setTabState(tabId, newState);
+              
+              // Notify any listening popups about state change
+              chrome.runtime.sendMessage({ action: "tabStateChanged", tabId, state: newState }).catch(() => {});
+              
+              sendResponse({ success: true, state: newState });
+          }).catch(err => {
+              Logger.error(`updateTabState race lock error: ${err.message}`, "ServiceWorker");
+              sendResponse({ success: false, error: err.message });
           });
-          
-          sendResponse({ success: true, state: newState });
           break;
         }
 

@@ -6,7 +6,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import List, Optional
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request, Depends, Header
 from fastapi.responses import StreamingResponse
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +22,31 @@ from server.llm import client as llm_client
 from server.llm.client import reset_llm_client
 from server.profiles import manager as profile_manager
 from server.cache import manager as cache_manager
+
+async def verify_access_key(request: Request, x_access_key: Optional[str] = Header(None)):
+    is_local = request.client and request.client.host in ("127.0.0.1", "localhost", "::1")
+    forwarded = request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip")
+    
+    # If the request explicitly provides the X-Access-Key header (like the Shared Extension does),
+    # ALWAYS validate it, even on localhost. This allows testing the Shared Extension locally.
+    if x_access_key is not None:
+        if not config.CLIENT_ACCESS_KEYS:
+            raise HTTPException(status_code=403, detail="Shared access is disabled (no access keys configured).")
+        if x_access_key not in config.CLIENT_ACCESS_KEYS:
+            raise HTTPException(status_code=401, detail="Invalid Access Key")
+        return
+        
+    # If NO access key header is provided (Main Extension), allow ONLY if it's a true local request
+    if is_local and not forwarded:
+        return
+        
+    raise HTTPException(status_code=401, detail="Missing Access Key")
+
+async def verify_localhost(request: Request):
+    is_local = request.client and request.client.host in ("127.0.0.1", "localhost", "::1")
+    forwarded = request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip")
+    if not is_local or forwarded:
+        raise HTTPException(status_code=403, detail="Localhost access only")
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -93,7 +118,7 @@ def get_gpu_info():
         logger.warning(f"Failed to fetch GPU/Torch memory details: {e}")
     return gpu_info
 
-@app.get("/status")
+@app.get("/status", dependencies=[Depends(verify_access_key)])
 async def get_status():
     engine_running = mit_process.EngineProcessManager.get_instance().is_running()
     engine_healthy = await mit_process.check_engine_health()
@@ -166,7 +191,7 @@ def merge_close_regions(regions: list, max_dist_x=80, max_dist_y=60) -> list:
     return merged
 
 
-@app.post("/translate")
+@app.post("/translate", dependencies=[Depends(verify_access_key)])
 async def translate_image(
     image: Optional[UploadFile] = File(None),
     image_url: Optional[str] = Form(None),
@@ -318,7 +343,7 @@ async def translate_image(
             logger.error(f"Error processing translation: {e}")
             raise HTTPException(500, detail=str(e))
 
-@app.post("/translate/stream")
+@app.post("/translate/stream", dependencies=[Depends(verify_access_key)])
 async def translate_stream(
     image: Optional[UploadFile] = File(None),
     image_url: Optional[str] = Form(None),
@@ -493,7 +518,7 @@ async def translate_stream(
     }
     return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
 
-@app.post("/internal/translate_text")
+@app.post("/internal/translate_text", dependencies=[Depends(verify_access_key)])
 async def translate_text(
     texts: List[str],
     source_lang: str,
@@ -517,7 +542,7 @@ async def translate_text(
 # PROFILE MANAGEMENT ENDPOINTS
 # ──────────────────────────────────────────────────────────────────────
 
-@app.get("/profiles")
+@app.get("/profiles", dependencies=[Depends(verify_access_key)])
 async def get_profiles():
     pm = profile_manager.get_profile_manager()
     return {
@@ -525,13 +550,13 @@ async def get_profiles():
         "auto_profiles": pm.get_auto_profiles()
     }
 
-@app.get("/profiles/{name}")
+@app.get("/profiles/{name}", dependencies=[Depends(verify_access_key)])
 async def get_profile(name: str):
     pm = profile_manager.get_profile_manager()
     content = pm.get_profile_content(name)
     return {"name": name, "content": content}
 
-@app.put("/profiles/{name}")
+@app.put("/profiles/{name}", dependencies=[Depends(verify_access_key)])
 async def save_profile(name: str, payload: dict):
     pm = profile_manager.get_profile_manager()
     content = payload.get("content", "")
@@ -550,7 +575,7 @@ async def save_profile(name: str, payload: dict):
 # SETTINGS ENDPOINTS
 # ──────────────────────────────────────────────────────────────────────
 
-@app.get("/settings/llm")
+@app.get("/settings/llm", dependencies=[Depends(verify_localhost)])
 async def get_llm_settings():
     """Return the current active LLM configuration."""
     return {
@@ -559,7 +584,7 @@ async def get_llm_settings():
         "ollama_url": config.OLLAMA_URL,
     }
 
-@app.post("/settings/llm")
+@app.post("/settings/llm", dependencies=[Depends(verify_localhost)])
 async def update_llm_settings(payload: dict):
     """
     Hot-reload LLM provider, model, and API key without restarting the server.
@@ -593,6 +618,29 @@ async def update_llm_settings(payload: dict):
         }
     except Exception as e:
         logger.error(f"Failed to update LLM settings: {e}")
+        raise HTTPException(500, detail=str(e))
+
+@app.get("/settings/access_keys", dependencies=[Depends(verify_localhost)])
+async def get_access_keys():
+    """Return the list of shared extension access keys."""
+    return {"keys": config.CLIENT_ACCESS_KEYS}
+
+@app.post("/settings/access_keys", dependencies=[Depends(verify_localhost)])
+async def update_access_keys(payload: dict):
+    """
+    Update the list of shared extension access keys.
+    Payload: { keys: list[str] }
+    """
+    keys = payload.get("keys")
+    if not isinstance(keys, list):
+        raise HTTPException(400, detail="keys must be a list of strings")
+        
+    try:
+        config.update_client_access_keys(keys)
+        logger.info(f"Shared Access Keys updated via API: {keys}")
+        return {"status": "ok", "keys": config.CLIENT_ACCESS_KEYS}
+    except Exception as e:
+        logger.error(f"Failed to update access keys: {e}")
         raise HTTPException(500, detail=str(e))
 
 if __name__ == "__main__":

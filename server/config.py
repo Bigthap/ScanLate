@@ -1,16 +1,32 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 
 # Load .env file if exists
 load_dotenv()
 
 # Root directory of the ScanLate project
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 
 # Server Configurations
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8745"))
 MIT_SERVER_PORT = int(os.getenv("MIT_SERVER_PORT", "8000"))
 MIT_SERVER_URL = os.getenv("MIT_SERVER_URL", f"http://127.0.0.1:{MIT_SERVER_PORT}")
+
+# Security Settings
+_keys_str = os.getenv("CLIENT_ACCESS_KEYS", "")
+CLIENT_ACCESS_KEYS = [k.strip() for k in _keys_str.split(",") if k.strip()]
+
+def update_client_access_keys(keys_list: list[str]):
+    global CLIENT_ACCESS_KEYS
+    CLIENT_ACCESS_KEYS = [k.strip() for k in keys_list if k.strip()]
+    keys_str = ",".join(CLIENT_ACCESS_KEYS)
+    # Ensure .env file exists
+    if not os.path.exists(ENV_PATH):
+        open(ENV_PATH, 'a').close()
+    set_key(ENV_PATH, "CLIENT_ACCESS_KEYS", keys_str)
+
+
 
 # GPU Settings
 DEVICE = os.getenv("DEVICE", "cuda")

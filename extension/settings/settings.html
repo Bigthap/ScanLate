@@ -384,6 +384,18 @@
           <p class="input-hint">ปกติคือ http://127.0.0.1:8745 ถ้ารันบนเครื่องเดียวกัน</p>
         </div>
 
+        <div class="card" id="access-keys-card">
+          <div class="card-label"><span>🔑 Shared Access Keys</span></div>
+          <p class="input-hint" style="margin-bottom: 12px; margin-top: -4px;">รหัสผ่านสำหรับส่งให้เพื่อนใช้งานผ่าน Shared Extension</p>
+          <div style="display:flex; gap: 8px; margin-bottom: 12px;">
+            <input type="text" id="input-new-access-key" class="text-input" placeholder="พิมพ์ชื่อ Key ใหม่ (เช่น friendA)..." style="flex:1;" />
+            <button class="btn-secondary" id="btn-add-access-key">➕ เพิ่ม</button>
+          </div>
+          <div class="profiles-list" id="access-keys-list" style="max-height: 200px; overflow-y: auto;">
+            <div class="profile-empty">กำลังโหลด...</div>
+          </div>
+        </div>
+
         <div class="card" id="server-status-card">
           <div class="card-label"><span>📊 สถานะ Server</span></div>
           <div class="status-grid" id="status-grid">

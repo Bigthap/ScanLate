@@ -1,53 +1,53 @@
 # ScanLate v3
 
-ScanLate is a powerful browser extension and local backend server that translates manga directly in your browser. By utilizing a local OCR engine combined with large language models (LLMs), it overlays translated text onto manga pages seamlessly.
+**ScanLate** คือส่วนขยายสำหรับเบราว์เซอร์ (Browser Extension) และเซิร์ฟเวอร์แบบจำลอง (Local Server) ที่ออกแบบมาเพื่อช่วยแปลภาษามังงะในเบราว์เซอร์ของคุณแบบเรียลไทม์! โดยใช้การผสมผสานระหว่างระบบอ่านข้อความจากภาพ (OCR) ในเครื่อง และ AI อัจฉริยะ (LLMs) เพื่อช่วยแปลและนำข้อความใหม่ไปวางทับบนหน้ามังงะได้อย่างแนบเนียน
 
-## Features
+## ✨ ฟีเจอร์เด่น
 
-- **On-the-fly Translation**: Detects, translates, and overlays manga text in the browser.
-- **Multimodal LLM Translation**: Sends the image context to the AI (e.g., Gemini Flash, GPT-4o) for superior translation accuracy and context awareness.
-- **LLM OCR (Advanced)**: Uses AI models to extract text from manga pages, overcoming the limitations of traditional OCR models. Features smart bounding box merging for context-aware text detection.
-- **Auto Glossary**: Automatically extracts and saves character names and specific terminology so the AI remembers them in future pages.
-- **Customizable Overlays**: Auto-scales font size and samples background/text colors to match the original art style seamlessly.
-- **Local Server**: A lightweight Python backend that bridges the extension, the OCR engine (`manga-image-translator`), and the LLM API (`LiteLLM`).
+- **On-the-fly Translation**: ตรวจจับและแปลข้อความบนหน้ามังงะให้ทันทีที่คุณเปิดอ่าน
+- **Multimodal LLM Translation**: ส่งภาพประกอบหน้ามังงะไปให้ AI (เช่น Gemini Flash, GPT-4o) เพื่อช่วยวิเคราะห์บริบท ทำให้แปลได้แม่นยำและเป็นธรรมชาติมากยิ่งขึ้น
+- **LLM OCR (Advanced)**: ยกระดับระบบดึงข้อความจากภาพ (OCR) โดยใช้ AI ในการอ่านข้อความแทนโมเดลแบบเก่า ช่วยให้จับประโยคยาวๆ หรือฟอนต์อ่านยากๆ ได้ดียิ่งขึ้น พร้อมระบบรวมกล่องข้อความ (Bounding Box Merging) อัตโนมัติ
+- **Auto Glossary**: มีระบบจดจำคำศัพท์อัตโนมัติ โดย AI จะแยกชื่อตัวละครและคำเฉพาะของเรื่องนั้นๆ ออกมาบันทึกไว้ และดึงมาใช้ในหน้าถัดๆ ไป เพื่อให้การเรียกชื่อไม่เพี้ยน
+- **Customizable Overlays**: ระบบสร้างกล่องข้อความทับของเดิม ที่สามารถดึงสีพื้นหลังและสีตัวอักษรเดิมมาใช้ พร้อมทั้งปรับขนาดฟอนต์ให้พอดีกรอบอัตโนมัติ
+- **Local Server**: รันเซิร์ฟเวอร์ด้วย Python แบบเบาๆ เพื่อทำหน้าที่เชื่อมต่อระหว่าง Extension, ระบบ OCR (`manga-image-translator`) และ AI API (`LiteLLM`) 
 
-## Prerequisites
+## 🛠️ สิ่งที่ต้องเตรียม
 
-- **Python 3.10+** (Added to PATH)
-- **Chromium-based Browser** (Google Chrome, Microsoft Edge, Brave, etc.)
-- A valid API key for an LLM provider (e.g., Google Gemini API, OpenRouter, or OpenAI).
+- **Python 3.10+** (ติดตั้งและเพิ่มเข้า PATH แล้ว)
+- **เบราว์เซอร์ตระกูล Chromium** (เช่น Google Chrome, Microsoft Edge, Brave เป็นต้น)
+- **API Key สำหรับ LLM** (เช่น Google Gemini API, OpenRouter, หรือ OpenAI)
 
-## Installation
+## 🚀 วิธีการติดตั้ง
 
-### 1. Setup the Local Server
-1. Clone this repository to your local machine:
+### 1. ติดตั้ง Local Server (ฝั่งประมวลผล)
+1. โคลน (Clone) โปรเจกต์นี้ลงเครื่องของคุณ:
    ```bash
    git clone https://github.com/Bigthap/ScanLate.git
    ```
-2. Double-click the `ScanLate.bat` file. This automated script will:
-   - Create a Python virtual environment.
-   - Install all required dependencies (including `manga-image-translator`).
-   - Start the local API server on port `5000`.
+2. ดับเบิ้ลคลิกไฟล์ `ScanLate.bat` โดยสคริปต์นี้จะจัดการสิ่งต่อไปนี้ให้อัตโนมัติ:
+   - สร้าง Python Virtual Environment 
+   - ติดตั้ง Dependencies ที่จำเป็นทั้งหมด (รวมถึง `manga-image-translator`)
+   - เริ่มต้นรัน API Server ที่พอร์ต `5000`
 
-### 2. Install the Browser Extension
-1. Open your browser and go to the extensions page (`chrome://extensions/`).
-2. Enable **Developer mode** in the top right corner.
-3. Click **Load unpacked** and select the `extension` folder inside the cloned repository.
+### 2. ติดตั้งส่วนขยายสำหรับเบราว์เซอร์ (Browser Extension)
+1. เปิดเบราว์เซอร์และเข้าไปที่หน้าจัดการส่วนขยาย (พิมพ์ `chrome://extensions/` บนช่อง URL)
+2. เปิดใช้งานโหมดนักพัฒนา (เปิดสวิตช์ **Developer mode** ที่มุมขวาบน)
+3. กดปุ่ม **Load unpacked** แล้วเลือกโฟลเดอร์ `extension` ที่อยู่ในโปรเจกต์ที่เพิ่งโหลดมา
 
-### 3. Configuration
-1. Click the ScanLate extension icon in your browser to open the popup.
-2. Go to **Settings** (the gear icon).
-3. Under **General**, input your **LLM API Key**, select your provider (e.g. OpenRouter, Gemini), and set your preferred translation model.
-4. Under **Advanced Features**, you can enable:
-   - **LLM OCR Configuration** for much higher text recognition accuracy.
-   - **Multimodal Translation** to provide the manga image as context to the AI translator.
-   - **Auto Glossary** to build a dynamic dictionary of names and terms.
+### 3. การตั้งค่าก่อนใช้งาน
+1. คลิกที่ไอคอนของ ScanLate บนแถบส่วนขยายของเบราว์เซอร์
+2. กดไปที่ **Settings** (รูปฟันเฟือง)
+3. ในหมวด **General** ให้กรอก **LLM API Key** เลือกผู้ให้บริการ (เช่น OpenRouter, Gemini) และตั้งชื่อ Model ที่ต้องการใช้
+4. ในหมวด **Advanced Features** สามารถเลือกเปิดฟีเจอร์เพิ่มเติมได้ เช่น:
+   - **LLM OCR Configuration**: เพื่อใช้ AI ในการอ่านข้อความในภาพ (แม่นยำสูง แต่อาจกินโควต้า API)
+   - **Multimodal Translation**: เพื่อให้ AI เห็นภาพมังงะและเข้าใจบริบทขณะแปล
+   - **Auto Glossary**: เพื่อให้ระบบจดจำคำศัพท์และชื่อตัวละครอัตโนมัติ
 
-## Usage
-- Open a manga reading website.
-- The ScanLate popup will allow you to select your translation profile and target language.
-- Click the **Translate** button (or use the auto-translate features) to process the current page. 
-- You can adjust font sizes and configurations on the fly!
+## 📖 วิธีการใช้งาน
+- เปิดเว็บไซต์อ่านมังงะที่คุณต้องการ
+- จะมีหน้าต่างของ ScanLate เด้งขึ้นมา เพื่อให้คุณตั้งค่าโปรไฟล์แปลและภาษาเป้าหมาย
+- คลิกที่ปุ่ม **Translate** เพื่อเริ่มแปลหน้ามังงะปัจจุบัน (หรือเปิดใช้งานโหมดแปลอัตโนมัติได้)
+- สามารถปรับขนาดฟอนต์ และแก้ไขคำแปลผ่านหน้าจอได้โดยตรง!
 
-## Disclaimer
-This tool is intended for personal and educational use. Please support the official releases of the manga you read.
+## ⚠️ คำเตือน / Disclaimer
+โปรเจกต์นี้ถูกสร้างขึ้นมาเพื่อใช้ส่วนบุคคลและเพื่อการศึกษาเท่านั้น โปรดสนับสนุนผลงานมังงะลิขสิทธิ์จากผู้จัดพิมพ์อย่างเป็นทางการด้วยนะครับ

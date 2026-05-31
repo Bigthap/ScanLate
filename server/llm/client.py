@@ -149,19 +149,32 @@ class LLMClient:
             
             # Refresh API keys from configuration dynamically
             self._setup_keys()
-            
-            # We enforce JSON mode if supported by model, or guide via prompt
-            response = await litellm.acompletion(
-                model=model_str,
-                messages=[
+            active_key = self._get_active_api_key()
+            if not active_key and self.provider != "ollama":
+                raise ValueError(f"API Key for provider '{self.provider}' is missing or empty! Please set it in .env or Extension Settings.")
+
+            completion_kwargs = {
+                "model": model_str,
+                "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
                 ],
-                api_base=api_base,
-                response_format={"type": "json_object"} if self.provider in ("gemini", "openai") else None,
-                temperature=0.2,
-                timeout=30.0
-            )
+                "api_base": api_base,
+                "temperature": 0.2,
+                "timeout": 30.0
+            }
+            if active_key:
+                completion_kwargs["api_key"] = active_key
+            if self.provider == "openrouter":
+                completion_kwargs["extra_headers"] = {
+                    "HTTP-Referer": "https://github.com/Bigthap/ScanLate",
+                    "X-Title": "ScanLate V3"
+                }
+            if self.provider in ("gemini", "openai"):
+                completion_kwargs["response_format"] = {"type": "json_object"}
+
+            # We enforce JSON mode if supported by model, or guide via prompt
+            response = await litellm.acompletion(**completion_kwargs)
 
             response_text = response.choices[0].message.content.strip()
             
@@ -177,17 +190,7 @@ class LLMClient:
                 )
                 await asyncio.sleep(retry_wait)
                 try:
-                    response = await litellm.acompletion(
-                        model=model_str,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_content}
-                        ],
-                        api_base=api_base,
-                        response_format={"type": "json_object"} if self.provider in ("gemini", "openai") else None,
-                        temperature=0.2,
-                        timeout=30.0
-                    )
+                    response = await litellm.acompletion(**completion_kwargs)
                     response_text = response.choices[0].message.content.strip()
                     translated_cleaned = self._parse_llm_json_response(response_text, len(cleaned_texts))
                 except Exception as retry_err:
@@ -264,7 +267,9 @@ class LLMClient:
             model_str = self._resolve_model_string()
             self._setup_keys()
             active_key = self._get_active_api_key()
-            
+            if not active_key and self.provider != "ollama":
+                raise ValueError(f"API Key for provider '{self.provider}' is missing or empty! Please set it in .env or Extension Settings.")
+
             completion_kwargs = {
                 "model": model_str,
                 "messages": [
@@ -279,6 +284,11 @@ class LLMClient:
                 completion_kwargs["api_base"] = api_base
             if active_key:
                 completion_kwargs["api_key"] = active_key
+            if self.provider == "openrouter":
+                completion_kwargs["extra_headers"] = {
+                    "HTTP-Referer": "https://github.com/Bigthap/ScanLate",
+                    "X-Title": "ScanLate V3"
+                }
             if self.provider in ("gemini", "openai"):
                 completion_kwargs["response_format"] = {"type": "json_object"}
 

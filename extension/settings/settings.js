@@ -576,6 +576,114 @@ function initProfiles() {
 }
 
 // ─────────────────────────────────────────────
+// Debug Logs
+// ─────────────────────────────────────────────
+function initDebugLogs() {
+  const chkDebugMode = $("chk-debug-mode");
+  const btnClearLogs = $("btn-clear-logs");
+  const logEntries = $("log-entries");
+  const debugLogConsole = $("debug-log-console");
+  let logInterval = null;
+
+  async function updateLogs() {
+    try {
+      const response = await chrome.runtime.sendMessage({ action: "getDebugLogs" });
+      if (response && response.success && response.logs) {
+        // Only update if the number of logs has changed or we want to redraw
+        logEntries.innerHTML = "";
+        response.logs.forEach(log => {
+          const div = document.createElement("div");
+          div.className = "log-entry";
+          
+          if (log.includes("[ERROR]")) {
+            div.className += " log-entry-error";
+            div.style.color = "#ff4d4f";
+          } else if (log.includes("[WARN]")) {
+            div.className += " log-entry-warn";
+            div.style.color = "#faad14";
+          } else {
+            div.className += " log-entry-info";
+            div.style.color = "#4caf50";
+          }
+          
+          div.textContent = log;
+          logEntries.appendChild(div);
+        });
+        
+        // Auto scroll
+        debugLogConsole.scrollTop = debugLogConsole.scrollHeight;
+      }
+    } catch (e) {
+      console.error("Log fetch error:", e);
+    }
+  }
+
+  function startLogPolling() {
+    if (logInterval) clearInterval(logInterval);
+    updateLogs();
+    logInterval = setInterval(updateLogs, 1000);
+  }
+
+  function stopLogPolling() {
+    if (logInterval) {
+      clearInterval(logInterval);
+      logInterval = null;
+    }
+  }
+
+  if (chkDebugMode) {
+    chkDebugMode.addEventListener("change", async () => {
+      const debugMode = chkDebugMode.checked;
+      if (debugMode) {
+        debugLogConsole.classList.remove("hidden");
+        debugLogConsole.style.display = "block";
+        startLogPolling();
+      } else {
+        debugLogConsole.classList.add("hidden");
+        debugLogConsole.style.display = "none";
+        stopLogPolling();
+      }
+
+      // Save globally
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab) {
+        await chrome.runtime.sendMessage({
+          action: "updateTabState",
+          tabId: activeTab.id,
+          updates: { debugMode }
+        });
+        try {
+          await chrome.tabs.sendMessage(activeTab.id, { action: "setDebugMode", debugMode });
+        } catch (e) { }
+      }
+      
+      // Save debugMode setting globally in local storage
+      chrome.storage.local.set({ debugMode });
+    });
+
+    // Load initial debugMode
+    chrome.storage.local.get("debugMode", (res) => {
+      if (res.debugMode) {
+        chkDebugMode.checked = true;
+        debugLogConsole.classList.remove("hidden");
+        debugLogConsole.style.display = "block";
+        startLogPolling();
+      } else {
+        debugLogConsole.classList.add("hidden");
+        debugLogConsole.style.display = "none";
+      }
+    });
+  }
+
+  if (btnClearLogs) {
+    btnClearLogs.addEventListener("click", async () => {
+      await chrome.runtime.sendMessage({ action: "clearDebugLogs" });
+      logEntries.innerHTML = "";
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
 // Main Init
 // ─────────────────────────────────────────────
 async function init() {
@@ -584,6 +692,7 @@ async function init() {
   initEyeToggles();
   initProfiles();
   initAdvancedFeatures();
+  initDebugLogs();
 
   const savedData = await loadSettings();
 

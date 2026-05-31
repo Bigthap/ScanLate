@@ -20,13 +20,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const btnOptions = document.getElementById("btn-options");
   const linkCreateProfile = document.getElementById("link-create-profile");
 
-  // Debug Panel Elements
-  const chkDebugMode = document.getElementById("chk-debug-mode");
-  const debugLogConsole = document.getElementById("debug-log-console");
-  const logEntries = document.getElementById("log-entries");
-  const btnClearLogs = document.getElementById("btn-clear-logs");
 
-  let logInterval = null;
 
   // Get active tab context (allow popup to initialize connection check even if active tab is unavailable)
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -100,15 +94,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Restore language
       langSelect.value = state.sourceLang || "auto";
       
-      // Restore debug mode
-      chkDebugMode.checked = !!state.debugMode;
-      if (chkDebugMode.checked) {
-        debugLogConsole.classList.remove("hidden");
-        startLogPolling();
-      } else {
-        debugLogConsole.classList.add("hidden");
-        stopLogPolling();
-      }
+
 
       // Adjust UI based on status
       updateUIStatus(state);
@@ -157,9 +143,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!tabId) return;
     const profileName = profileSelect.value;
     const sourceLang = langSelect.value;
-    const debugMode = chkDebugMode.checked;
-    
-    const updates = { profileName, sourceLang, debugMode };
+    const updates = { profileName, sourceLang };
     const res = await chrome.runtime.sendMessage({ action: "updateTabState", tabId, updates });
     if (res && res.state) {
       updateUIStatus(res.state);
@@ -169,79 +153,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   profileSelect.addEventListener("change", saveControlsState);
   langSelect.addEventListener("change", saveControlsState);
 
-  // Debug Toggle Event
-  chkDebugMode.addEventListener("change", async () => {
-    const debugMode = chkDebugMode.checked;
-    if (debugMode) {
-      debugLogConsole.classList.remove("hidden");
-      startLogPolling();
-    } else {
-      debugLogConsole.classList.add("hidden");
-      stopLogPolling();
-    }
 
-    if (tabId) {
-      await chrome.runtime.sendMessage({
-        action: "updateTabState",
-        tabId,
-        updates: { debugMode }
-      });
-      // Notify content script of the mode change immediately
-      try {
-        await chrome.tabs.sendMessage(tabId, { action: "setDebugMode", debugMode });
-      } catch (e) {
-        // Ignore failure if content script is not injected
-      }
-    }
-  });
-
-  // Clear Logs
-  btnClearLogs.addEventListener("click", async () => {
-    await chrome.runtime.sendMessage({ action: "clearDebugLogs" });
-    logEntries.innerHTML = "";
-  });
-
-  // Log Polling Functions
-  async function updateLogs() {
-    try {
-      const response = await chrome.runtime.sendMessage({ action: "getDebugLogs" });
-      if (response && response.success && response.logs) {
-        logEntries.innerHTML = "";
-        response.logs.forEach(log => {
-          const div = document.createElement("div");
-          div.className = "log-entry";
-          
-          if (log.includes("[ERROR]")) {
-            div.className += " log-entry-error";
-          } else if (log.includes("[WARN]")) {
-            div.className += " log-entry-warn";
-          } else {
-            div.className += " log-entry-info";
-          }
-          
-          div.textContent = log;
-          logEntries.appendChild(div);
-        });
-        // Scroll to bottom
-        debugLogConsole.scrollTop = debugLogConsole.scrollHeight;
-      }
-    } catch (e) {
-      console.error("Log fetch error:", e);
-    }
-  }
-
-  function startLogPolling() {
-    if (logInterval) clearInterval(logInterval);
-    updateLogs();
-    logInterval = setInterval(updateLogs, 1000);
-  }
-
-  function stopLogPolling() {
-    if (logInterval) {
-      clearInterval(logInterval);
-      logInterval = null;
-    }
-  }
 
   // Trigger Translation Command
   btnTranslate.addEventListener("click", async () => {
@@ -266,8 +178,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       chrome.tabs.sendMessage(tabId, {
         action: "startTranslation",
         profileName,
-        sourceLang,
-        debugMode
+        sourceLang
       });
       
     } catch (e) {

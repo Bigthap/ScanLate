@@ -161,22 +161,22 @@ async def extract_text_with_gemini(
                     elif isinstance(parsed, dict):
                         for v in parsed.values():
                             if isinstance(v, list):
-                                texts = v
+                                extracted_texts = v
                                 break
                 except Exception:
                     pass
             
-            if len(texts) != len(regions):
-                logger.warning(f"LLM returned {len(texts)} texts, expected {len(regions)}")
+            if len(extracted_texts) != len(regions):
+                logger.warning(f"LLM returned {len(extracted_texts)} texts, expected {len(regions)}")
                 # Pad or truncate to match
-                while len(texts) < len(regions):
-                    texts.append("")
-                texts = texts[:len(regions)]
+                while len(extracted_texts) < len(regions):
+                    extracted_texts.append("")
+                extracted_texts = extracted_texts[:len(regions)]
                 
             for i, r in enumerate(regions):
-                r["original_text"] = texts[i]
+                r["original_text"] = extracted_texts[i]
                 
-            logger.info(f"LLM OCR: Successfully extracted {len(texts)} texts using grid packing.")
+            logger.info(f"LLM OCR: Successfully extracted {len(extracted_texts)} texts using grid packing.")
                 
         return regions
     except litellm.RateLimitError:

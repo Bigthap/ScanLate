@@ -6,7 +6,7 @@ load_dotenv()
 
 # Root directory of the ScanLate project
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+ENV_PATH = os.path.join(ROOT_DIR, ".env")
 
 # Server Configurations
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8745"))
@@ -26,7 +26,21 @@ def update_client_access_keys(keys_list: list[str]):
         open(ENV_PATH, 'a').close()
     set_key(ENV_PATH, "CLIENT_ACCESS_KEYS", keys_str)
 
-
+def update_llm_config_env(provider: str, model: str, api_key: str = "", ollama_url: str = ""):
+    if not os.path.exists(ENV_PATH):
+        open(ENV_PATH, 'a').close()
+    
+    set_key(ENV_PATH, "LLM_PROVIDER", provider)
+    set_key(ENV_PATH, "LLM_MODEL", model)
+    
+    if provider == "gemini":
+        set_key(ENV_PATH, "GOOGLE_API_KEY", api_key)
+    elif provider == "openrouter":
+        set_key(ENV_PATH, "OPENROUTER_API_KEY", api_key)
+    elif provider == "openai":
+        set_key(ENV_PATH, "OPENAI_API_KEY", api_key)
+    elif provider == "ollama":
+        set_key(ENV_PATH, "OLLAMA_URL", ollama_url)
 
 # GPU Settings
 DEVICE = os.getenv("DEVICE", "cuda")

@@ -38,6 +38,10 @@ class LLMClient:
             os.environ["OPENAI_API_KEY"] = api_key
         elif provider == "ollama":
             config.OLLAMA_URL = ollama_url or "http://localhost:11434"
+            
+        # Save to .env persistently
+        config.update_llm_config_env(provider, model, api_key, ollama_url)
+        
         logger.info(f"LLM config updated: provider={provider}, model={model}")
 
     def _setup_keys(self):

@@ -160,7 +160,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!tabId) return;
     const profileName = profileSelect.value || "default";
     const sourceLang = langSelect.value;
-    const debugMode = chkDebugMode.checked;
 
     // 1. Update state to translating
     const updates = {

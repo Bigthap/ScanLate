@@ -414,9 +414,12 @@
   // PIPELINE COORDINATOR
   // ──────────────────────────────────────────────────────────────────────
 
-  async function startPageTranslation(profileName, sourceLang, startDebugMode) {
-    console.log(`ScanLate: Page translation started. Profile: ${profileName}, Lang: ${sourceLang}, Debug: ${startDebugMode}`);
-    debugMode = !!startDebugMode;
+  async function startPageTranslation(profileName, sourceLang) {
+    console.log(`ScanLate: Page translation started. Profile: ${profileName}, Lang: ${sourceLang}`);
+    
+    // Read debug mode from storage
+    const debugStored = await chrome.storage.local.get("debugMode");
+    debugMode = !!debugStored.debugMode;
     
     detectedImages = findMangaImages();
     // Sort by vertical position on page so top images are translated first (reading order)

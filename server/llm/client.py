@@ -48,6 +48,15 @@ class LLMClient:
         if config.OPENROUTER_API_KEY:
             os.environ["OPENROUTER_API_KEY"] = config.OPENROUTER_API_KEY
 
+    def _get_active_api_key(self):
+        if self.provider == "gemini":
+            return config.GOOGLE_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        elif self.provider == "openrouter":
+            return config.OPENROUTER_API_KEY or os.environ.get("OPENROUTER_API_KEY")
+        elif self.provider == "openai":
+            return os.environ.get("OPENAI_API_KEY")
+        return None
+
     def _resolve_model_string(self) -> str:
         """
         Return the correct LiteLLM model string for the current provider.
@@ -254,22 +263,29 @@ class LLMClient:
             api_base = config.OLLAMA_URL if self.provider == "ollama" else None
             model_str = self._resolve_model_string()
             self._setup_keys()
+            active_key = self._get_active_api_key()
             
+            completion_kwargs = {
+                "model": model_str,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                "temperature": 0.2,
+                "timeout": 30.0,
+                "stream": True,
+            }
+            if api_base:
+                completion_kwargs["api_base"] = api_base
+            if active_key:
+                completion_kwargs["api_key"] = active_key
+            if self.provider in ("gemini", "openai"):
+                completion_kwargs["response_format"] = {"type": "json_object"}
+
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    response = await litellm.acompletion(
-                        model=model_str,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_content}
-                        ],
-                        api_base=api_base,
-                        response_format={"type": "json_object"} if self.provider in ("gemini", "openai") else None,
-                        temperature=0.2,
-                        timeout=30.0,
-                        stream=True
-                    )
+                    response = await litellm.acompletion(**completion_kwargs)
 
                     # Simple streaming JSON array/object parser
                     in_string = False
@@ -483,18 +499,27 @@ class LLMClient:
         try:
             model_str = self._resolve_model_string()
             api_base = config.OLLAMA_URL if self.provider == "ollama" else None
+            model_str = self._resolve_model_string()
+            self._setup_keys()
+            active_key = self._get_active_api_key()
             
-            response = await litellm.acompletion(
-                model=model_str,
-                messages=[
+            completion_kwargs = {
+                "model": model_str,
+                "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                api_base=api_base,
-                response_format={"type": "json_object"} if self.provider in ("gemini", "openai") else None,
-                temperature=0.1,
-                timeout=20.0
-            )
+                "temperature": 0.1,
+                "timeout": 20.0,
+            }
+            if api_base:
+                completion_kwargs["api_base"] = api_base
+            if active_key:
+                completion_kwargs["api_key"] = active_key
+            if self.provider in ("gemini", "openai"):
+                completion_kwargs["response_format"] = {"type": "json_object"}
+            
+            response = await litellm.acompletion(**completion_kwargs)
             
             response_text = response.choices[0].message.content.strip()
             # Find JSON array using regex if not perfectly formatted

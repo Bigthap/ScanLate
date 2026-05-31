@@ -46,20 +46,18 @@ async def extract_text_with_gemini(
             else:
                 model_str = prefix + ocr_model_slug
             api_base = None
-            # Set API key for this call
-            if ocr_api_key:
-                if ocr_provider == "openrouter":
-                    litellm.openrouter_key = ocr_api_key
-                elif ocr_provider == "gemini":
-                    litellm.vertex_key = ocr_api_key
-                    import os; os.environ["GEMINI_API_KEY"] = ocr_api_key
-                elif ocr_provider == "openai":
-                    litellm.openai_key = ocr_api_key
-            else:
-                # Use global OCR provider keys if per-OCR key not set
+            
+            # Use explicit OCR key, or fallback to main LLM key
+            api_key_to_use = ocr_api_key
+            if not api_key_to_use:
                 from server.llm.client import get_llm_client
                 lc = get_llm_client()
-                lc._setup_keys()
+                if ocr_provider == "gemini":
+                    api_key_to_use = config.GOOGLE_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+                elif ocr_provider == "openrouter":
+                    api_key_to_use = config.OPENROUTER_API_KEY or os.environ.get("OPENROUTER_API_KEY")
+                elif ocr_provider == "openai":
+                    api_key_to_use = os.environ.get("OPENAI_API_KEY")
         else:
             # Fall back: use global LLM config
             from server.llm.client import get_llm_client
@@ -132,13 +130,30 @@ async def extract_text_with_gemini(
         
         async with ocr_semaphore:
             logger.info(f"LLM OCR: Sending {len(regions)} crops in batch using {model_str} (provider: {effective_provider})...")
-            response = await litellm.acompletion(
-                model=model_str,
-                messages=messages,
-                temperature=0.0,
-                api_base=api_base_param,
-                response_format={"type": "json_object"} if effective_provider in ("gemini", "openai") else None
-            )
+            
+            # Prepare arguments
+            completion_kwargs = {
+                "model": model_str,
+                "messages": messages,
+                "temperature": 0.0,
+            }
+            if api_base_param:
+                completion_kwargs["api_base"] = api_base_param
+            if 'api_key_to_use' in locals() and api_key_to_use:
+                completion_kwargs["api_key"] = api_key_to_use
+            elif 'lc' in locals():
+                # Fallback to main LLM client api key if we didn't resolve one
+                if effective_provider == "gemini":
+                    completion_kwargs["api_key"] = config.GOOGLE_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+                elif effective_provider == "openrouter":
+                    completion_kwargs["api_key"] = config.OPENROUTER_API_KEY or os.environ.get("OPENROUTER_API_KEY")
+                elif effective_provider == "openai":
+                    completion_kwargs["api_key"] = os.environ.get("OPENAI_API_KEY")
+
+            if effective_provider in ("gemini", "openai"):
+                completion_kwargs["response_format"] = {"type": "json_object"}
+            
+            response = await litellm.acompletion(**completion_kwargs)
             
             response_text = response.choices[0].message.content.strip()
             extracted_texts = []

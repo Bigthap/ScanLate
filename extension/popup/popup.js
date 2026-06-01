@@ -21,6 +21,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   const btnOptions = document.getElementById("btn-options");
   const btnOptionsOffline = document.getElementById("btn-options-offline");
   const linkCreateProfile = document.getElementById("link-create-profile");
+  const toggleForceLoad = document.getElementById("toggle-force-load");
+
+  // Load persisted forceLoadImages state
+  const { forceLoadImages } = await chrome.storage.local.get("forceLoadImages");
+  toggleForceLoad.checked = !!forceLoadImages;
+  toggleForceLoad.addEventListener("change", () => {
+    chrome.storage.local.set({ forceLoadImages: toggleForceLoad.checked });
+  });
 
 
 
@@ -185,7 +193,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       chrome.tabs.sendMessage(tabId, {
         action: "startTranslation",
         profileName,
-        sourceLang
+        sourceLang,
+        forceLoadImages: toggleForceLoad.checked
       });
       
     } catch (e) {

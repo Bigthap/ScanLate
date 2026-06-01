@@ -45,7 +45,7 @@
         break;
 
       case "startTranslation":
-        startPageTranslation(message.profileName, message.sourceLang, message.debugMode);
+        startPageTranslation(message.profileName, message.sourceLang, message.debugMode, message.forceLoadImages);
         sendResponse({ success: true });
         break;
 
@@ -433,13 +433,65 @@
   // PIPELINE COORDINATOR
   // ──────────────────────────────────────────────────────────────────────
 
-  async function startPageTranslation(profileName, sourceLang) {
+  // ── Smooth Scroll to bottom and back — triggers Lazy Load on the page ──
+  function smoothScrollAndReturn() {
+    return new Promise(resolve => {
+      const startY = window.scrollY;
+      const totalH = document.documentElement.scrollHeight - window.innerHeight;
+      if (totalH <= 0) { resolve(); return; }
+
+      const duration = Math.min(800 + totalH * 0.05, 1400); // scale with page height, cap at 1.4s
+      const easeInOut = t => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      let start = null;
+
+      // Phase 1: scroll to bottom
+      function scrollDown(ts) {
+        if (!start) start = ts;
+        const elapsed = ts - start;
+        const progress = Math.min(elapsed / duration, 1);
+        window.scrollTo(0, totalH * easeInOut(progress));
+        if (progress < 1) {
+          requestAnimationFrame(scrollDown);
+        } else {
+          // Brief pause for lazy-load to fire, then scroll back
+          setTimeout(() => {
+            start = null;
+            requestAnimationFrame(scrollBack);
+          }, 220);
+        }
+      }
+
+      // Phase 2: scroll back to original position
+      function scrollBack(ts) {
+        if (!start) start = ts;
+        const elapsed = ts - start;
+        const progress = Math.min(elapsed / duration, 1);
+        window.scrollTo(0, totalH + (startY - totalH) * easeInOut(progress));
+        if (progress < 1) {
+          requestAnimationFrame(scrollBack);
+        } else {
+          resolve();
+        }
+      }
+
+      requestAnimationFrame(scrollDown);
+    });
+  }
+
+  async function startPageTranslation(profileName, sourceLang, _debugMode, forceLoadImages) {
     console.log(`ScanLate: Page translation started. Profile: ${profileName}, Lang: ${sourceLang}`);
     
     // Read debug mode from storage
     const debugStored = await chrome.storage.local.get("debugMode");
     debugMode = !!debugStored.debugMode;
-    
+
+    // Auto-scroll to force lazy-load images before scanning
+    if (forceLoadImages) {
+      console.log("ScanLate: Force-load mode ON — smooth scrolling to trigger lazy load...");
+      await smoothScrollAndReturn();
+      console.log("ScanLate: Scroll complete. Starting image detection.");
+    }
+
     detectedImages = findMangaImages();
     // Sort by vertical position on page so top images are translated first (reading order)
     detectedImages.sort((a, b) => {

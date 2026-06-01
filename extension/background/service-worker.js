@@ -101,7 +101,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const status = await ScanLateAPI.getStatus();
           const profiles = status.status === "online" ? await ScanLateAPI.getProfiles() : [];
           Logger.info(`Server status: ${status.status}`, "ServiceWorker");
+          // Cache result in session storage so popup can restore instantly on reopen
+          await chrome.storage.session.set({
+            serverCache: { status, profiles, ts: Date.now() }
+          });
           sendResponse({ status, profiles });
+          break;
+        }
+
+        case "getCachedServerStatus": {
+          // Return last known server state without a network round-trip
+          const { serverCache } = await chrome.storage.session.get("serverCache");
+          sendResponse({ cache: serverCache || null });
           break;
         }
 

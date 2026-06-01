@@ -38,36 +38,42 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Initialize and check server connection
   async function checkServerAndLoad() {
-    statusText.textContent = "กำลังเชื่อมต่อ...";
-    statusDot.className = "status-dot offline";
-    btnTranslate.disabled = true;
-    btnTranslate.classList.add("disabled");
+    // --- Step 1: Show cached state instantly (no loading flicker) ---
+    const { cache } = await chrome.runtime.sendMessage({ action: "getCachedServerStatus" });
+    if (cache && cache.status && cache.status.status === "online") {
+      statusDot.className = "status-dot online";
+      statusText.textContent = "เชื่อมต่อแล้ว";
+      offlineOverlay.classList.add("hidden");
+      btnTranslate.disabled = false;
+      btnTranslate.classList.remove("disabled");
+      populateProfiles(cache.profiles || []);
+      if (tabId) await restoreTabState();
+    }
 
+    // --- Step 2: Re-verify in background (silent) ---
     try {
-      // Send query to service worker
       const response = await chrome.runtime.sendMessage({ action: "checkServer" });
-      
+
       if (response && response.status && response.status.status === "online") {
-        // Server is Online
+        // Server confirmed online — update UI if anything changed (e.g. profiles list)
         statusDot.className = "status-dot online";
         statusText.textContent = "เชื่อมต่อแล้ว";
         offlineOverlay.classList.add("hidden");
-        
-        // Populate profile selector
-        const profiles = response.profiles || [];
-        populateProfiles(profiles);
-        
-        // Restore tab state
-        if (tabId) {
-          await restoreTabState();
+        btnTranslate.disabled = false;
+        btnTranslate.classList.remove("disabled");
+        populateProfiles(response.profiles || []);
+        if (!cache || !cache.status || cache.status.status !== "online") {
+          // Was offline before, restore tab state now
+          if (tabId) await restoreTabState();
         }
       } else {
-        // Server is Offline
+        // Server went offline — show offline state
         showOffline();
       }
     } catch (e) {
       console.error("Connection check failed:", e);
-      showOffline();
+      // Only show offline if we had no valid cache
+      if (!cache || cache.status?.status !== "online") showOffline();
     }
   }
 

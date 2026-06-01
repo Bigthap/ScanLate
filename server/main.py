@@ -463,6 +463,11 @@ async def translate_stream(
                     # Auto-select OCR: mocr trained on Japanese only, 48px for other languages
                     auto_ocr = "mocr" if source_lang.lower() in ("ja", "auto") else "48px"
                     regions = await mit.get_ocr_regions(image_bytes, source_lang, auto_ocr, detector="ctd")
+                elif ocr_pipeline == "rapidocr":
+                    # Comic OCR: RapidOCR (PaddleOCR ONNX) — CPU-based, no VRAM contention
+                    # Best for Korean/English manhwa with oval/overlapping bubbles
+                    from server.engine import rapidocr_client
+                    regions = await rapidocr_client.run_ocr(image_bytes)
                 else:
                     # Standard: default CRAFT + selected ocr_model
                     regions = await mit.get_ocr_regions(image_bytes, source_lang, ocr_model)

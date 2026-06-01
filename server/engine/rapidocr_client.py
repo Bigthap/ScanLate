@@ -81,8 +81,11 @@ def _parse_result(raw_result) -> List[Dict[str, Any]]:
             "original_text": text,
             "fg_color": [0, 0, 0],
             "bg_color": [255, 255, 255],
+            "text_color": [0, 0, 0],   # required by main.py pipeline
             "alignment": "center",
             "font_size": 40,
+            "angle": 0,                # RapidOCR handles rotation internally
+            "prob": score,             # confidence score mapped to prob
         })
 
     return regions

@@ -426,8 +426,9 @@ async def translate_stream(
                 mit = mit_client.get_engine_client()
                 # Route OCR pipeline based on selected mode
                 if ocr_pipeline == "enhanced_mit":
-                    # Plan A: CTD detector + mocr (manga_ocr) via MIT
-                    regions = await mit.get_ocr_regions(image_bytes, source_lang, "mocr", detector="ctd")
+                    # Auto-select OCR: mocr trained on Japanese only, 48px for other languages
+                    auto_ocr = "mocr" if source_lang.lower() in ("ja", "auto") else "48px"
+                    regions = await mit.get_ocr_regions(image_bytes, source_lang, auto_ocr, detector="ctd")
                 else:
                     # Standard: default CRAFT + selected ocr_model
                     regions = await mit.get_ocr_regions(image_bytes, source_lang, ocr_model)

@@ -50,7 +50,7 @@ FP16 = os.getenv("FP16", "True").lower() in ("true", "1", "yes")
 
 # LLM Settings
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openrouter")
-LLM_MODEL = os.getenv("LLM_MODEL", "google/gemini-2.5-flash-lite")
+LLM_MODEL = os.getenv("LLM_MODEL", "google/gemini-3.1-flash-lite")
 MAX_CONCURRENT_LLM = int(os.getenv("MAX_CONCURRENT_LLM", "2"))
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")

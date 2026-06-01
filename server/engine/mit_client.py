@@ -10,7 +10,7 @@ class EngineClient:
     def __init__(self):
         self.url = f"{config.MIT_SERVER_URL}/translate/with-form/json"
 
-    async def get_ocr_regions(self, image_bytes: bytes, source_lang: str, ocr_model: str = None) -> List[Dict[str, Any]]:
+    async def get_ocr_regions(self, image_bytes: bytes, source_lang: str, ocr_model: str = None, detector: str = None) -> List[Dict[str, Any]]:
         """
         Sends an image to the manga-image-translator server to run OCR and text detection.
         Returns a list of text regions (bounding boxes, original text, colors, angles).
@@ -31,6 +31,8 @@ class EngineClient:
 
         # Set OCR model (default to 48px if not specified)
         ocr_model_name = ocr_model if ocr_model else "48px"
+        # Set detector model (default to 'default' if not specified)
+        detector_name = detector if detector else "default"
 
         engine_config = {
             "translator": {
@@ -43,6 +45,9 @@ class EngineClient:
             },
             "render": {
                 "renderer": "none"
+            },
+            "detector": {
+                "detector": detector_name
             },
             "ocr": {
                 "ocr": ocr_model_name
@@ -57,7 +62,7 @@ class EngineClient:
         }
 
         try:
-            logger.info(f"Sending image to engine for OCR (Lang: {target_engine_lang}, OCR: {ocr_model_name})...")
+            logger.info(f"Sending image to engine for OCR (Lang: {target_engine_lang}, Detector: {detector_name}, OCR: {ocr_model_name})...")
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(self.url, files=files, data=data)
                 

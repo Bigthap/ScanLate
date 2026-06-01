@@ -359,7 +359,8 @@ async def translate_stream(
     use_auto_glossary: str = Form("false"),
     ocr_provider: Optional[str] = Form(None),
     ocr_model_slug: Optional[str] = Form(None),
-    ocr_api_key: Optional[str] = Form(None)
+    ocr_api_key: Optional[str] = Form(None),
+    ocr_pipeline: str = Form("standard")
 ):
     """Streams OCR metadata first, then translated texts block by block using SSE."""
     start_time = time.time()
@@ -393,7 +394,8 @@ async def translate_stream(
     cache_key = cm.generate_key(
         image_bytes=image_bytes, profile_hash=p_hash, font_name=current_font,
         llm_model=config.LLM_MODEL, source_lang=source_lang,
-        use_multimodal=use_multimodal_bool, use_gemini_ocr=use_gemini_ocr_bool
+        use_multimodal=use_multimodal_bool, use_gemini_ocr=use_gemini_ocr_bool,
+        ocr_pipeline=ocr_pipeline
     )
 
     page_context = ""
@@ -422,7 +424,13 @@ async def translate_stream(
             # Only lock the OCR engine to prevent VRAM spikes.
             async with translation_semaphore:
                 mit = mit_client.get_engine_client()
-                regions = await mit.get_ocr_regions(image_bytes, source_lang, ocr_model)
+                # Route OCR pipeline based on selected mode
+                if ocr_pipeline == "enhanced_mit":
+                    # Plan A: CTD detector + manga_ocr via MIT
+                    regions = await mit.get_ocr_regions(image_bytes, source_lang, "manga_ocr", detector="ctd")
+                else:
+                    # Standard: default CRAFT + selected ocr_model
+                    regions = await mit.get_ocr_regions(image_bytes, source_lang, ocr_model)
                 
                 if use_gemini_ocr_bool and regions:
                     from server.engine.gemini_ocr import extract_text_with_gemini

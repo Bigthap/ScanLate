@@ -170,7 +170,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         case "translateImage": {
-          const { imageUrl, sourceLang, profileName, ocrModel, contextJson, useMultimodal, useGeminiOcr, useAutoGlossary, ocrProvider, ocrModelSlug, ocrApiKey, imageIndex, totalImages } = message;
+          const { imageUrl, sourceLang, profileName, ocrModel, contextJson, useMultimodal, useGeminiOcr, useAutoGlossary, ocrProvider, ocrModelSlug, ocrApiKey, ocrPipeline, imageIndex, totalImages } = message;
           Logger.info(`Proxy-translating image URL: ${imageUrl} using profile: ${profileName}`, "ServiceWorker");
           try {
             const response = await fetch(imageUrl);
@@ -215,7 +215,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const abortController = new AbortController();
             activeTranslationControllers[tabId].push(abortController);
 
-            ScanLateAPI.translateImageStream(imageBuffer, sourceLang, profileName, ocrModel, contextJson, imageIndex, totalImages, useMultimodal, useGeminiOcr, useAutoGlossary, ocrProvider, ocrModelSlug, ocrApiKey, (eventObj) => {
+            ScanLateAPI.translateImageStream(imageBuffer, sourceLang, profileName, ocrModel, contextJson, imageIndex, totalImages, useMultimodal, useGeminiOcr, useAutoGlossary, ocrProvider, ocrModelSlug, ocrApiKey, ocrPipeline, (eventObj) => {
 
                 // Scale bounding boxes back up to match the original image size in the browser
                 if (scaleRatio !== 1.0 && eventObj.type === "metadata" && eventObj.regions) {

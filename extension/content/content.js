@@ -568,7 +568,7 @@
     try {
       const stored = await chrome.storage.local.get([
         "ocrModel", "useGeminiOcr", "useMultimodal", "useAutoGlossary",
-        "ocrProvider", "ocrModelSlug", "ocrApiKey"
+        "ocrProvider", "ocrModelSlug", "ocrApiKey", "ocrPipeline"
       ]);
       if (stored.ocrModel) ocrModel = stored.ocrModel;
       useMultimodal = !!stored.useMultimodal;
@@ -577,6 +577,7 @@
       if (stored.ocrProvider)   ocrProvider   = stored.ocrProvider;
       if (stored.ocrModelSlug)  ocrModelSlug  = stored.ocrModelSlug;
       if (stored.ocrApiKey)     ocrApiKey     = stored.ocrApiKey;
+      let ocrPipeline = stored.ocrPipeline || "standard";
     } catch (e) {
       console.warn("ScanLate: Could not read settings from storage, using defaults");
     }
@@ -636,6 +637,7 @@
               ocrProvider,
               ocrModelSlug,
               ocrApiKey,
+              ocrPipeline,
               imageIndex: i + 1,
               totalImages: detectedImages.length
 

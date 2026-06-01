@@ -165,7 +165,7 @@ async function loadSettings() {
   const data = await loadFromStorage([
     "llmProvider", "llmModel", "customModel",
     "googleApiKey", "openrouterKey", "openaiKey", "ollamaUrl",
-    "serverUrl", "ocrModel",
+    "serverUrl", "ocrModel", "ocrPipeline",
     "useMultimodal", "useGeminiOcr", "useAutoGlossary",
     "ocrProvider", "ocrModelSlug", "ocrApiKey"
   ]);
@@ -194,6 +194,12 @@ async function loadSettings() {
   // OCR (local model)
   if (data.ocrModel) {
     const radio = document.querySelector(`input[name="ocr-model"][value="${data.ocrModel}"]`);
+    if (radio) radio.checked = true;
+  }
+
+  // Detection Pipeline
+  if (data.ocrPipeline) {
+    const radio = document.querySelector(`input[name="ocr-pipeline"][value="${data.ocrPipeline}"]`);
     if (radio) radio.checked = true;
   }
 
@@ -373,8 +379,9 @@ async function refreshServerStatus() {
 // ─────────────────────────────────────────────
 async function saveOCRSettings() {
   const ocrModel = document.querySelector("input[name='ocr-model']:checked")?.value || "48px";
+  const ocrPipeline = document.querySelector("input[name='ocr-pipeline']:checked")?.value || "standard";
   const useGeminiOcr = $("toggle-gemini-ocr")?.checked || false;
-  await saveToStorage({ ocrModel, useGeminiOcr });
+  await saveToStorage({ ocrModel, ocrPipeline, useGeminiOcr });
   showToast(`บันทึก OCR Settings แล้ว`);
 }
 

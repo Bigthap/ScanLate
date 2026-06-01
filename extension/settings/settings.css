@@ -854,6 +854,34 @@ body {
   border: 1px solid rgba(34,197,94,0.2);
 }
 
+/* Delete profile button — subtle, reveal on card hover */
+.btn-delete-profile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all var(--transition);
+  line-height: 1;
+}
+.profile-item:hover .btn-delete-profile {
+  opacity: 1;
+  border-color: rgba(239,68,68,0.25);
+  color: #f87171;
+}
+.btn-delete-profile:hover {
+  background: rgba(239,68,68,0.12) !important;
+  border-color: rgba(239,68,68,0.5) !important;
+  color: var(--accent-red) !important;
+  transform: scale(1.1);
+}
+
 /* Toggle switch (legacy, for backward compat) */
 .toggle-switch {
   display: flex;

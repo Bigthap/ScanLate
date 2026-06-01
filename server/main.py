@@ -571,6 +571,31 @@ async def save_profile(name: str, payload: dict):
         return {"status": "success"}
     raise HTTPException(500, detail="Failed to save profile")
 
+@app.delete("/profiles/{name}", dependencies=[Depends(verify_localhost)])
+async def delete_profile(name: str):
+    if name == "default":
+        raise HTTPException(400, detail="Cannot delete the default profile")
+    pm = profile_manager.get_profile_manager()
+    path = pm.get_profile_path(name)
+    if not os.path.exists(path):
+        raise HTTPException(404, detail=f"Profile '{name}' not found")
+    try:
+        os.remove(path)
+    except Exception as e:
+        raise HTTPException(500, detail=f"Failed to delete profile file: {e}")
+    # Remove from _auto_glossary_profiles.txt if present
+    marker_path = os.path.join(pm.profiles_dir, "_auto_glossary_profiles.txt")
+    if os.path.exists(marker_path):
+        try:
+            existing = pm.get_auto_profiles()
+            updated = [p for p in existing if p != name]
+            with open(marker_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(updated))
+        except Exception as e:
+            logger.warning(f"Could not update auto_glossary_profiles.txt: {e}")
+    logger.info(f"Deleted profile: {name}")
+    return {"status": "ok", "deleted": name}
+
 # ──────────────────────────────────────────────────────────────────────
 # SETTINGS ENDPOINTS
 # ──────────────────────────────────────────────────────────────────────

@@ -498,6 +498,9 @@ async function loadProfiles() {
       const tag = isAuto
         ? `<span class="profile-tag profile-tag-auto">✨ Auto Glossary</span>`
         : `<span class="profile-tag profile-tag-manual">✍️ Manual</span>`;
+      const deleteBtn = p !== "default"
+        ? `<button class="btn-delete-profile" data-delete-profile="${p}" title="ลบ Profile">🗑️</button>`
+        : ``;
       return `
         <div class="profile-item">
           <div style="display:flex;align-items:center;gap:8px">
@@ -506,6 +509,7 @@ async function loadProfiles() {
           </div>
           <div class="profile-actions">
             <button class="btn-secondary" data-profile="${p}">✏️ แก้ไข</button>
+            ${deleteBtn}
           </div>
         </div>
       `;
@@ -549,6 +553,25 @@ async function saveProfile() {
   }
 }
 
+async function deleteProfile(name) {
+  if (!confirm(`ลบ Profile '${name}' ใช่ไหม?`)) return;
+  const serverUrl = $("input-server-url").value.trim() || "http://127.0.0.1:8745";
+  try {
+    const resp = await fetch(`${serverUrl}/profiles/${encodeURIComponent(name)}`, {
+      method: "DELETE"
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showToast(`ลบ Profile ไม่สำเร็จ: ${err.detail || resp.status}`, true);
+      return;
+    }
+    showToast(`ลบ Profile "${name}" แล้ว`);
+    loadProfiles();
+  } catch {
+    showToast("ลบ Profile ไม่สำเร็จ (Server ออฟไลน์?)", true);
+  }
+}
+
 function initProfiles() {
   $("btn-new-profile").addEventListener("click", () => {
     $("profile-name-input").value = "";
@@ -563,10 +586,12 @@ function initProfiles() {
 
   $("btn-save-profile").addEventListener("click", saveProfile);
 
-  // Event delegation for dynamically-rendered Edit buttons (MV3 CSP blocks inline onclick)
+  // Event delegation for dynamically-rendered Edit and Delete buttons (MV3 CSP blocks inline onclick)
   $("profiles-list").addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-profile]");
-    if (btn) editProfile(btn.dataset.profile);
+    const editBtn = e.target.closest("button[data-profile]");
+    if (editBtn) { editProfile(editBtn.dataset.profile); return; }
+    const delBtn = e.target.closest("button[data-delete-profile]");
+    if (delBtn) deleteProfile(delBtn.dataset.deleteProfile);
   });
 
   // Load when Profiles section is shown

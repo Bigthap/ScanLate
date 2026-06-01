@@ -1,10 +1,21 @@
 import os
+import asyncio
 import hashlib
 import logging
 from typing import List
 from server import config
 
 logger = logging.getLogger("ScanLate-Profiles")
+
+# Per-profile async locks to prevent concurrent write races
+_profile_locks: dict[str, asyncio.Lock] = {}
+_locks_meta_lock = asyncio.Lock()
+
+async def _get_profile_lock(name: str) -> asyncio.Lock:
+    async with _locks_meta_lock:
+        if name not in _profile_locks:
+            _profile_locks[name] = asyncio.Lock()
+        return _profile_locks[name]
 
 class ProfileManager:
     def __init__(self):
@@ -87,7 +98,6 @@ class ProfileManager:
         path = self.get_profile_path(name)
         if not os.path.exists(path):
             logger.warning(f"Profile {name} not found. Returning template.")
-            # Fallback to template if it exists
             template_path = os.path.join(self.profiles_dir, "_template.md")
             if os.path.exists(template_path):
                 with open(template_path, "r", encoding="utf-8") as f:
@@ -106,6 +116,43 @@ class ProfileManager:
         content = self.get_profile_content(name)
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
+    def get_glossary_terms(self, name: str) -> List[dict]:
+        """Parses and returns all glossary entries from the profile as a list of dicts."""
+        content = self.get_profile_content(name)
+        terms = []
+        in_glossary = False
+        for line in content.splitlines():
+            if line.startswith("## คลังคำศัพท์เฉพาะ"):
+                in_glossary = True
+                continue
+            if in_glossary and line.startswith("## "):
+                break
+            if in_glossary and line.startswith("|"):
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) >= 4 and parts[1] and parts[1] not in ("คำศัพท์ต้นฉบับ", "---", ""):
+                    terms.append({
+                        "term": parts[1],
+                        "translation": parts[2],
+                        "context": parts[3] if len(parts) > 3 else ""
+                    })
+        return terms
+
+    def get_relevant_glossary(self, name: str, ocr_texts: List[str]) -> List[dict]:
+        """Returns only glossary terms whose 'term' appears in the given OCR text list.
+        Falls back to full glossary if nothing matches (e.g., first page of a new chapter).
+        """
+        all_terms = self.get_glossary_terms(name)
+        if not all_terms:
+            return []
+
+        combined_text = " ".join(ocr_texts).lower()
+        relevant = [t for t in all_terms if t["term"].lower() in combined_text]
+
+        # If nothing matches, still inject up to 30 most-recent terms so context isn't lost
+        if not relevant:
+            return all_terms[-30:]
+        return relevant
+
     def create_profile(self, name: str, content: str = None) -> bool:
         """Creates a new profile. If content is empty, initializes with template."""
         path = self.get_profile_path(name)
@@ -115,7 +162,6 @@ class ProfileManager:
             
         try:
             if not content:
-                # Load template
                 template_path = os.path.join(self.profiles_dir, "_template.md")
                 if os.path.exists(template_path):
                     with open(template_path, "r", encoding="utf-8") as f:
@@ -143,84 +189,86 @@ class ProfileManager:
             logger.error(f"Failed to update profile {name}: {e}")
             return False
 
-    def append_glossary_terms(self, name: str, new_terms: List[dict]) -> bool:
-        """Appends new terms to the glossary table in the profile, deduplicating."""
+    async def append_glossary_terms(self, name: str, new_terms: List[dict]) -> bool:
+        """Appends new terms to the glossary table in the profile, deduplicating.
+        Uses an async per-profile lock to prevent concurrent write races.
+        """
         if not new_terms:
             return True
-        content = self.get_profile_content(name)
-        
-        # Build set of existing terms in glossary for deduplication
-        existing_terms = set()
-        for line in content.splitlines():
-            if line.startswith("|") and "|" in line[1:]:
-                parts = [p.strip() for p in line.split("|")]
-                if len(parts) >= 2 and parts[1] and parts[1] not in ("คำศัพท์ต้นฉบับ", "---"):
-                    existing_terms.add(parts[1].lower())
-        
-        # Filter out terms that already exist
-        filtered_terms = [
-            t for t in new_terms
-            if t.get("term", "").lower() not in existing_terms and t.get("term", "")
-        ]
-        if not filtered_terms:
-            logger.info(f"Auto Glossary: No new unique terms for profile '{name}'. Skipping.")
-            return True
-        # Find the glossary section
-        glossary_header = "## คลังคำศัพท์เฉพาะ (Glossary)"
-        if glossary_header not in content:
-            content += f"\n\n{glossary_header}\n| คำศัพท์ต้นฉบับ | คำแปลภาษาไทย | รายละเอียด/บริบท |\n|---|---|---|\n"
-        
-        lines = content.splitlines()
-        
-        # 1. Fix broken tables by removing empty lines within the glossary section
-        cleaned_lines = []
-        in_glossary = False
-        for line in lines:
-            if line.startswith("## คลังคำศัพท์เฉพาะ"):
-                in_glossary = True
-                cleaned_lines.append(line)
-            elif in_glossary and line.startswith("## "):
-                in_glossary = False
-                # Ensure blank line before next section header
-                if cleaned_lines and cleaned_lines[-1].strip() != "":
-                    cleaned_lines.append("")
-                cleaned_lines.append(line)
-            elif in_glossary:
-                if line.strip() != "":
-                    cleaned_lines.append(line)
-            else:
-                cleaned_lines.append(line)
-                
-        lines = cleaned_lines
-        
-        # 2. Find insertion point for new terms
-        insert_idx = len(lines)
-        for i in range(len(lines)):
-            if lines[i].startswith("## คลังคำศัพท์เฉพาะ"):
-                for j in range(i + 1, len(lines)):
-                    if lines[j].startswith("## "):
-                        # Insert right before the blank line before the next header
-                        if lines[j-1] == "":
-                            insert_idx = j - 1
-                        else:
-                            insert_idx = j
-                        break
-                break
-                
-        # 3. Prepare the new rows
-        new_rows = []
-        for term in filtered_terms:
-            t = term.get('term', '').replace('\n', ' ').strip()
-            tr = term.get('translation', '').replace('\n', ' ').strip()
-            ctx = term.get('context', '').replace('\n', ' ').strip()
-            new_rows.append(f"| {t} | {tr} | {ctx} |")
+
+        lock = await _get_profile_lock(name)
+        async with lock:
+            content = self.get_profile_content(name)
             
-        # 4. Insert them
-        lines[insert_idx:insert_idx] = new_rows
-        
-        logger.info(f"Auto Glossary: Added {len(filtered_terms)} new terms to profile '{name}'.")
-        self._mark_as_auto_profile(name)
-        return self.update_profile(name, "\n".join(new_lines))
+            # Build set of existing terms in glossary for deduplication
+            existing_terms = set()
+            for line in content.splitlines():
+                if line.startswith("|") and "|" in line[1:]:
+                    parts = [p.strip() for p in line.split("|")]
+                    if len(parts) >= 2 and parts[1] and parts[1] not in ("คำศัพท์ต้นฉบับ", "---"):
+                        existing_terms.add(parts[1].lower())
+            
+            # Filter out terms that already exist
+            filtered_terms = [
+                t for t in new_terms
+                if t.get("term", "").lower() not in existing_terms and t.get("term", "")
+            ]
+            if not filtered_terms:
+                logger.info(f"Auto Glossary: No new unique terms for profile '{name}'. Skipping.")
+                return True
+
+            # Find the glossary section — create it if missing
+            glossary_header = "## คลังคำศัพท์เฉพาะ (Glossary)"
+            if glossary_header not in content:
+                content += f"\n\n{glossary_header}\n| คำศัพท์ต้นฉบับ | คำแปลภาษาไทย | รายละเอียด/บริบท |\n|---|---|---|\n"
+            
+            lines = content.splitlines()
+            
+            # Clean up empty lines within the glossary table block
+            cleaned_lines = []
+            in_glossary = False
+            for line in lines:
+                if line.startswith("## คลังคำศัพท์เฉพาะ"):
+                    in_glossary = True
+                    cleaned_lines.append(line)
+                elif in_glossary and line.startswith("## "):
+                    in_glossary = False
+                    if cleaned_lines and cleaned_lines[-1].strip() != "":
+                        cleaned_lines.append("")
+                    cleaned_lines.append(line)
+                elif in_glossary:
+                    if line.strip() != "":
+                        cleaned_lines.append(line)
+                else:
+                    cleaned_lines.append(line)
+                    
+            lines = cleaned_lines
+            
+            # Find insertion point (end of glossary table)
+            insert_idx = len(lines)
+            for i in range(len(lines)):
+                if lines[i].startswith("## คลังคำศัพท์เฉพาะ"):
+                    for j in range(i + 1, len(lines)):
+                        if lines[j].startswith("## "):
+                            insert_idx = j - 1 if lines[j-1] == "" else j
+                            break
+                    break
+                    
+            # Prepare the new markdown rows
+            new_rows = []
+            for term in filtered_terms:
+                t   = term.get("term", "").replace("\n", " ").strip()
+                tr  = term.get("translation", "").replace("\n", " ").strip()
+                ctx = term.get("context", "").replace("\n", " ").strip()
+                new_rows.append(f"| {t} | {tr} | {ctx} |")
+                
+            # Insert rows and write back
+            lines[insert_idx:insert_idx] = new_rows
+            
+            logger.info(f"Auto Glossary: Added {len(filtered_terms)} new terms to profile '{name}'.")
+            self._mark_as_auto_profile(name)
+            # FIX: was `new_lines` (NameError) — correct variable is `lines`
+            return self.update_profile(name, "\n".join(lines))
 
 # Global instance
 _manager = None

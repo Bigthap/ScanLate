@@ -243,14 +243,32 @@ class LLMClient:
         if not cleaned_texts:
             return
 
-        # Prepare prompts
+        # Prepare prompts — inject only RELEVANT glossary terms to save context window
         pm = get_profile_manager()
         profile_context = ""
         page_context = ""
         if context_texts:
             page_context = "\n".join([f"- {t}" for t in context_texts])
         if profile_name and profile_name.lower() != "default":
-            profile_context = pm.get_profile_content(profile_name)
+            # Get full profile for character/tone rules, but filter glossary to relevant terms only
+            full_profile = pm.get_profile_content(profile_name)
+            relevant_terms = pm.get_relevant_glossary(profile_name, cleaned_texts)
+            if relevant_terms:
+                # Build a compact glossary snippet to append/replace the glossary section in prompt
+                glossary_lines = ["## คลังคำศัพท์เฉพาะ (Glossary)",
+                                  "| คำศัพท์ต้นฉบับ | คำแปลภาษาไทย | รายละเอียด/บริบท |",
+                                  "|---|---|---|"]
+                for t in relevant_terms:
+                    glossary_lines.append(f"| {t['term']} | {t['translation']} | {t.get('context','')} |")
+                # Strip the existing glossary section from full_profile and replace with filtered one
+                import re as _re
+                profile_no_gloss = _re.sub(
+                    r'## คลังคำศัพท์เฉพาะ \(Glossary\).*?(?=\n## |\Z)',
+                    '', full_profile, flags=_re.DOTALL
+                ).rstrip()
+                profile_context = profile_no_gloss + "\n\n" + "\n".join(glossary_lines)
+            else:
+                profile_context = full_profile
 
         system_prompt = prompts.build_system_prompt(source_lang, profile_context, page_context)
         user_prompt = prompts.build_user_prompt(cleaned_texts)
@@ -483,6 +501,8 @@ class LLMClient:
         Runs silently in the background — never raises, never blocks translation.
         """
         import time
+        import re as _re
+        import json as _json
         
         if not original_texts or not translated_texts or not profile_name or profile_name == "default":
             return []
@@ -496,24 +516,21 @@ class LLMClient:
         system_prompt = (
             "You are a helpful assistant that extracts glossary terms from manga translations. "
             "Given the original text and its translation, extract ONLY character names, locations, special moves, or unique terminology. "
-            "Return a JSON array of objects with keys: 'term' (original text), 'translation' (Thai), and 'context' (brief explanation). "
+            "Return a JSON array of objects with keys: 'term' (original text), 'translation' (Thai), and 'context' (brief explanation in Thai). "
             "If no such terms exist, return an empty array []."
         )
         
-        user_prompt = "Original Texts:\n"
-        for idx, t in enumerate(original_texts):
-            if t.strip():
-                user_prompt += f"[{idx}] {t.strip()}\n"
-                
-        user_prompt += "\nTranslated Texts:\n"
-        for idx, t in enumerate(translated_texts):
-            if t.strip():
-                user_prompt += f"[{idx}] {t.strip()}\n"
+        pairs = []
+        for orig, trans in zip(original_texts, translated_texts):
+            if orig.strip() and trans.strip():
+                pairs.append(f"{orig.strip()} → {trans.strip()}")
+        if not pairs:
+            return []
+        user_prompt = "Extract glossary terms from these translation pairs:\n" + "\n".join(pairs)
                 
         try:
             model_str = self._resolve_model_string()
             api_base = config.OLLAMA_URL if self.provider == "ollama" else None
-            model_str = self._resolve_model_string()
             self._setup_keys()
             active_key = self._get_active_api_key()
             
@@ -530,45 +547,48 @@ class LLMClient:
                 completion_kwargs["api_base"] = api_base
             if active_key:
                 completion_kwargs["api_key"] = active_key
+            if self.provider == "openrouter":
+                completion_kwargs["extra_headers"] = {
+                    "HTTP-Referer": "https://github.com/Bigthap/ScanLate",
+                    "X-Title": "ScanLate V3"
+                }
             if self.provider in ("gemini", "openai"):
                 completion_kwargs["response_format"] = {"type": "json_object"}
             
             response = await litellm.acompletion(**completion_kwargs)
-            
             response_text = response.choices[0].message.content.strip()
-            # Find JSON array using regex if not perfectly formatted
-            import re
-            import json
-            match = re.search(r'\[.*\]', response_text, re.DOTALL)
+
+            # Parse JSON array — handle both bare array and wrapped object
             terms = []
+            match = _re.search(r'\[.*\]', response_text, _re.DOTALL)
             if match:
-                terms = json.loads(match.group(0))
+                terms = _json.loads(match.group(0))
             else:
                 try:
-                    terms = json.loads(response_text)
-                    if isinstance(terms, dict) and "terms" in terms:
-                        terms = terms["terms"]
+                    parsed = _json.loads(response_text)
+                    if isinstance(parsed, list):
+                        terms = parsed
+                    elif isinstance(parsed, dict):
+                        terms = parsed.get("terms", parsed.get("glossary", []))
                 except Exception:
                     pass
                     
-            if isinstance(terms, list) and len(terms) > 0:
-                # Basic validation
+            if isinstance(terms, list) and terms:
                 valid_terms = [t for t in terms if isinstance(t, dict) and "term" in t and "translation" in t]
                 if valid_terms:
                     pm = get_profile_manager()
-                    pm.append_glossary_terms(profile_name, valid_terms)
-                    logger.info(f"Auto Glossary: Added terms to profile '{profile_name}'.")
+                    # append_glossary_terms is now async (uses asyncio.Lock)
+                    await pm.append_glossary_terms(profile_name, valid_terms)
+                    logger.info(f"Auto Glossary: Saved {len(valid_terms)} terms to profile '{profile_name}'.")
                     return valid_terms
                     
         except litellm.RateLimitError as e:
-            # Quota exhausted — set circuit-breaker, skip quietly
             retry_wait = self._extract_retry_delay(e)
-            cooldown = max(retry_wait, 60.0)  # Wait at least 60s before trying again
+            cooldown = max(retry_wait, 60.0)
             LLMClient._glossary_rate_limited_until = time.time() + cooldown
-            logger.debug(f"Auto Glossary: Rate limit hit. Pausing glossary for {cooldown:.0f}s (quota preserved for translation).")
+            logger.debug(f"Auto Glossary: Rate limit. Pausing {cooldown:.0f}s.")
         except Exception as e:
-            # Any other error — swallow silently, never disrupt translation
-            logger.debug(f"Auto Glossary: Skipped due to error: {type(e).__name__}")
+            logger.debug(f"Auto Glossary: Skipped — {type(e).__name__}: {e}")
             
         return []
 

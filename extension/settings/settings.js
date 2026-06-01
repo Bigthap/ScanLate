@@ -11,7 +11,7 @@ const OUTPUT_RATIO = 0.5;   // 50% output tokens
 
 // ── State ──
 let currentProvider = "openrouter";
-let currentModel = "google/gemini-2.5-flash-lite";
+let currentModel = "google/gemini-3.1-flash-lite";
 
 // ─────────────────────────────────────────────
 // DOM Helpers

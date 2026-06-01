@@ -565,6 +565,7 @@
     let ocrProvider = "openrouter";
     let ocrModelSlug = "google/gemini-2.5-flash";
     let ocrApiKey = "";
+    let ocrPipeline = "standard";
     try {
       const stored = await chrome.storage.local.get([
         "ocrModel", "useGeminiOcr", "useMultimodal", "useAutoGlossary",
@@ -577,7 +578,7 @@
       if (stored.ocrProvider)   ocrProvider   = stored.ocrProvider;
       if (stored.ocrModelSlug)  ocrModelSlug  = stored.ocrModelSlug;
       if (stored.ocrApiKey)     ocrApiKey     = stored.ocrApiKey;
-      let ocrPipeline = stored.ocrPipeline || "standard";
+      if (stored.ocrPipeline)   ocrPipeline   = stored.ocrPipeline;
     } catch (e) {
       console.warn("ScanLate: Could not read settings from storage, using defaults");
     }

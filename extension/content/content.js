@@ -436,37 +436,86 @@
   // ── Smooth Scroll to bottom and back — triggers Lazy Load on the page ──
   function smoothScrollAndReturn() {
     return new Promise(resolve => {
-      const startY = window.scrollY;
-      const totalH = document.documentElement.scrollHeight - window.innerHeight;
-      if (totalH <= 0) { resolve(); return; }
 
-      const duration = Math.min(800 + totalH * 0.05, 1400); // scale with page height, cap at 1.4s
+      // --- 1. Find the real scrollable container ---
+      function getScrollContainer() {
+        // Try window first
+        const winScrollable = document.documentElement.scrollHeight - window.innerHeight;
+        if (winScrollable > 10) return { el: null, isWindow: true };
+
+        // Walk up from body to find a vertically scrollable element
+        const walker = el => {
+          while (el && el !== document.documentElement) {
+            const style = window.getComputedStyle(el);
+            const overflow = style.overflowY;
+            if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight + 10) {
+              return el;
+            }
+            el = el.parentElement;
+          }
+          return null;
+        };
+
+        // Try walking from the first image found on the page
+        const img = document.querySelector('img[src]');
+        const custom = img ? walker(img) : null;
+        if (custom) return { el: custom, isWindow: false };
+
+        // Fallback: scan all divs for scroll containers
+        const divs = Array.from(document.querySelectorAll('div, main, article, section'));
+        for (const d of divs) {
+          const style = window.getComputedStyle(d);
+          const ov = style.overflowY;
+          if ((ov === 'auto' || ov === 'scroll') && d.scrollHeight > d.clientHeight + 10) {
+            return { el: d, isWindow: false };
+          }
+        }
+
+        // Last resort: just use window
+        return { el: null, isWindow: true };
+      }
+
+      const { el, isWindow } = getScrollContainer();
+      const scrollEl = isWindow ? document.documentElement : el;
+      const totalH = scrollEl.scrollHeight - (isWindow ? window.innerHeight : scrollEl.clientHeight);
+
+      console.log(`ScanLate: Scroll container: ${isWindow ? 'window' : el.tagName + '.' + el.className.slice(0,40)}, scrollable height: ${totalH}px`);
+
+      if (totalH <= 10) {
+        console.log("ScanLate: Page not scrollable, skipping auto-scroll.");
+        resolve();
+        return;
+      }
+
+      const startY = isWindow ? window.scrollY : scrollEl.scrollTop;
+      const duration = Math.min(800 + totalH * 0.05, 1400);
       const easeInOut = t => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+      const scrollTo = (y) => {
+        if (isWindow) {
+          window.scrollTo(0, y);
+        } else {
+          scrollEl.scrollTop = y;
+        }
+      };
+
       let start = null;
 
-      // Phase 1: scroll to bottom
       function scrollDown(ts) {
         if (!start) start = ts;
-        const elapsed = ts - start;
-        const progress = Math.min(elapsed / duration, 1);
-        window.scrollTo(0, totalH * easeInOut(progress));
+        const progress = Math.min((ts - start) / duration, 1);
+        scrollTo(totalH * easeInOut(progress));
         if (progress < 1) {
           requestAnimationFrame(scrollDown);
         } else {
-          // Brief pause for lazy-load to fire, then scroll back
-          setTimeout(() => {
-            start = null;
-            requestAnimationFrame(scrollBack);
-          }, 220);
+          setTimeout(() => { start = null; requestAnimationFrame(scrollBack); }, 220);
         }
       }
 
-      // Phase 2: scroll back to original position
       function scrollBack(ts) {
         if (!start) start = ts;
-        const elapsed = ts - start;
-        const progress = Math.min(elapsed / duration, 1);
-        window.scrollTo(0, totalH + (startY - totalH) * easeInOut(progress));
+        const progress = Math.min((ts - start) / duration, 1);
+        scrollTo(totalH + (startY - totalH) * easeInOut(progress));
         if (progress < 1) {
           requestAnimationFrame(scrollBack);
         } else {

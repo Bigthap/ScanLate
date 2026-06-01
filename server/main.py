@@ -426,8 +426,8 @@ async def translate_stream(
                 mit = mit_client.get_engine_client()
                 # Route OCR pipeline based on selected mode
                 if ocr_pipeline == "enhanced_mit":
-                    # Plan A: CTD detector + manga_ocr via MIT
-                    regions = await mit.get_ocr_regions(image_bytes, source_lang, "manga_ocr", detector="ctd")
+                    # Plan A: CTD detector + mocr (manga_ocr) via MIT
+                    regions = await mit.get_ocr_regions(image_bytes, source_lang, "mocr", detector="ctd")
                 else:
                     # Standard: default CRAFT + selected ocr_model
                     regions = await mit.get_ocr_regions(image_bytes, source_lang, ocr_model)

@@ -57,6 +57,29 @@ translation_semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_TRANSLATIONS)
 # API protection semaphore to prevent thundering herd rate limits from LLM providers
 llm_semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_LLM)
 
+# ── Idle auto-unload tracking ──
+_last_request_time: float = time.time()
+IDLE_UNLOAD_MINUTES: int = int(os.getenv("IDLE_UNLOAD_MINUTES", "5"))  # 0 = disabled
+
+def _touch_request():
+    """Call at the start of every translation to reset the idle timer."""
+    global _last_request_time
+    _last_request_time = time.time()
+
+async def _idle_watcher():
+    """Background task: unloads the MIT engine after IDLE_UNLOAD_MINUTES of inactivity."""
+    if IDLE_UNLOAD_MINUTES <= 0:
+        return
+    logger.info(f"Idle auto-unload enabled: will unload engine after {IDLE_UNLOAD_MINUTES} min of inactivity.")
+    while True:
+        await asyncio.sleep(60)  # check every minute
+        idle_sec = time.time() - _last_request_time
+        mgr = mit_process.EngineProcessManager.get_instance()
+        if mgr.is_running() and idle_sec >= IDLE_UNLOAD_MINUTES * 60:
+            logger.info(f"Engine idle for {idle_sec/60:.1f} min — unloading to free VRAM.")
+            mgr.stop()
+            logger.info("Engine unloaded. VRAM released. Will restart on next request.")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Launch manga-image-translator engine
@@ -67,10 +90,14 @@ async def lifespan(app: FastAPI):
         await mit_process.wait_until_ready(timeout_sec=15)
     else:
         logger.error("Failed to start manga-image-translator engine subprocess.")
-        
+
+    # Start idle-watcher background task
+    idle_task = asyncio.create_task(_idle_watcher())
+
     yield
-    
-    # Shutdown: Stop the engine subprocess
+
+    # Shutdown: cancel idle watcher and stop the engine subprocess
+    idle_task.cancel()
     logger.info("Shutting down ScanLate v3 Backend Service...")
     mit_process.stop_engine()
     logger.info("Shutdown complete.")
@@ -419,11 +446,18 @@ async def translate_stream(
             return
 
         img_label = f"รูปที่ {image_index}/{total_images}" if image_index and total_images else "รูป"
-        
+        _touch_request()  # Reset idle-unload timer
+
         try:
             # Only lock the OCR engine to prevent VRAM spikes.
             async with translation_semaphore:
                 mit = mit_client.get_engine_client()
+                # Auto-restart engine if it was unloaded by the idle watcher
+                mgr = mit_process.EngineProcessManager.get_instance()
+                if not mgr.is_running():
+                    logger.info("Engine was idle-unloaded. Restarting before OCR...")
+                    mgr.start()
+                    await mgr.wait_until_ready(timeout_sec=30)
                 # Route OCR pipeline based on selected mode
                 if ocr_pipeline == "enhanced_mit":
                     # Auto-select OCR: mocr trained on Japanese only, 48px for other languages
@@ -546,6 +580,45 @@ async def translate_text(
         return {"translated_texts": translated}
     except Exception as e:
         raise HTTPException(500, detail=str(e))
+
+# ──────────────────────────────────────────────────────────────────────
+# ENGINE MANAGEMENT ENDPOINTS
+# ──────────────────────────────────────────────────────────────────────
+
+@app.post("/engine/unload", dependencies=[Depends(verify_localhost)])
+async def engine_unload():
+    """Stop the MIT engine subprocess to free VRAM. Will auto-restart on next translation."""
+    mgr = mit_process.EngineProcessManager.get_instance()
+    if not mgr.is_running():
+        return {"status": "already_stopped", "message": "Engine was not running"}
+    mgr.stop()
+    logger.info("Engine manually unloaded via API. VRAM freed.")
+    return {"status": "unloaded", "message": "Engine stopped. VRAM freed. Will restart on next translation."}
+
+@app.post("/engine/reload", dependencies=[Depends(verify_localhost)])
+async def engine_reload():
+    """Stop and restart the MIT engine subprocess."""
+    mgr = mit_process.EngineProcessManager.get_instance()
+    if mgr.is_running():
+        mgr.stop()
+    mgr.start()
+    ready = await mgr.wait_until_ready(timeout_sec=30)
+    logger.info(f"Engine reloaded via API. Ready: {ready}")
+    return {"status": "reloaded" if ready else "starting", "ready": ready}
+
+@app.get("/engine/status", dependencies=[Depends(verify_localhost)])
+async def engine_status():
+    """Return engine runtime state and idle info."""
+    mgr = mit_process.EngineProcessManager.get_instance()
+    idle_sec = time.time() - _last_request_time
+    return {
+        "running": mgr.is_running(),
+        "healthy": await mgr.is_healthy(),
+        "pid": mgr.process.pid if mgr.is_running() else None,
+        "idle_seconds": round(idle_sec),
+        "auto_unload_minutes": IDLE_UNLOAD_MINUTES,
+        "auto_unload_enabled": IDLE_UNLOAD_MINUTES > 0,
+    }
 
 # ──────────────────────────────────────────────────────────────────────
 # PROFILE MANAGEMENT ENDPOINTS

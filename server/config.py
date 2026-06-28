@@ -39,6 +39,8 @@ def update_llm_config_env(provider: str, model: str, api_key: str = "", ollama_u
         set_key(ENV_PATH, "OPENROUTER_API_KEY", api_key)
     elif provider == "openai":
         set_key(ENV_PATH, "OPENAI_API_KEY", api_key)
+    elif provider == "maxplus":
+        set_key(ENV_PATH, "MAXPLUS_API_KEY", api_key)
     elif provider == "ollama":
         set_key(ENV_PATH, "OLLAMA_URL", ollama_url)
 
@@ -54,6 +56,8 @@ LLM_MODEL = os.getenv("LLM_MODEL", "google/gemini-3.1-flash-lite")
 MAX_CONCURRENT_LLM = int(os.getenv("MAX_CONCURRENT_LLM", "2"))
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+MAXPLUS_API_KEY = os.getenv("MAXPLUS_API_KEY", "")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
 # Data & Cache Directories

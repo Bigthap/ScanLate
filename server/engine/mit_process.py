@@ -73,11 +73,17 @@ class EngineProcessManager:
             python_exe = sys.executable
 
         # Command to start the manga-image-translator server.main REST API server
+        # --nonce None disables the inter-process nonce security check.
+        # This is required because ScanLate runs MIT as a subprocess with its own env,
+        # so MT_WEB_NONCE is never propagated to the MangaShare worker subprocess —
+        # causing "Nonce does not match" 401 errors on every request.
+        # Since the server only listens on 127.0.0.1, this is safe for local use.
         cmd = [
             python_exe,
             "-m", "server.main",
             "--host", "127.0.0.1",
-            "--port", str(self.port)
+            "--port", str(self.port),
+            "--nonce", "None",
         ]
         if config.DEVICE == "cuda":
             cmd.append("--use-gpu")

@@ -21,5 +21,13 @@
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
 }

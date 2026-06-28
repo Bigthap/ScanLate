@@ -96,6 +96,89 @@ function setProvider(provider) {
   // Auto-select first model in this group
   const firstModel = group?.querySelector(".model-option:not(.model-custom)");
   if (firstModel) selectModel(firstModel);
+
+  // Toggle MaxPlus Dashboard Card Visibility
+  const dashboardCard = $("maxplus-dashboard-card");
+  if (dashboardCard) {
+    if (provider === "maxplus") {
+      show(dashboardCard);
+      fetchMaxPlusUsage();
+    } else {
+      hide(dashboardCard);
+    }
+  }
+}
+
+async function fetchMaxPlusUsage() {
+  const serverUrl = $("input-server-url").value.trim() || "http://127.0.0.1:8745";
+  const badge = $("mp-status-badge");
+  
+  if (badge) {
+    badge.textContent = "กำลังอัปเดต...";
+    badge.style.background = "rgba(59, 130, 246, 0.1)";
+    badge.style.color = "#3b82f6";
+  }
+  
+  try {
+    const res = await fetch(`${serverUrl}/settings/maxplus/usage`);
+    const data = await res.json();
+    
+    if (!data.active) {
+      if (badge) badge.textContent = "ปิดการใช้งาน";
+      return;
+    }
+    
+    if (data.error) {
+      if (badge) {
+        badge.textContent = "เชื่อมต่อล้มเหลว";
+        badge.style.background = "rgba(239, 68, 68, 0.1)";
+        badge.style.color = "#ef4444";
+      }
+      $("mp-email").textContent = "เชื่อมต่อกับ Gateway ไม่ได้";
+      return;
+    }
+    
+    // Update labels
+    if (badge) {
+      badge.textContent = "ออนไลน์";
+      badge.style.background = "rgba(16, 185, 129, 0.1)";
+      badge.style.color = "#10b981";
+    }
+    
+    $("mp-email").textContent = data.email || "ไม่พบอีเมล";
+    $("mp-credit").textContent = `$${parseFloat(data.credit_usd || 0).toFixed(4)} USD`;
+    $("mp-requests").textContent = `${data.request_count || 0} calls / ${parseInt(data.total_tokens || 0).toLocaleString()} tokens`;
+    
+    const limit = data.limit_usd;
+    const limitUsed = data.limit_used_usd || 0;
+    
+    if (limit !== null && limit !== undefined) {
+      $("mp-spend-cap").textContent = `$${parseFloat(limitUsed).toFixed(4)} / $${parseFloat(limit).toFixed(2)}`;
+      
+      // Update progress bar
+      show($("mp-progress-wrap"));
+      const pct = limit > 0 ? Math.min(100, (limitUsed / limit) * 100) : 100;
+      $("mp-progress-text").textContent = `${pct.toFixed(1)}%`;
+      
+      const fill = $("mp-progress-fill");
+      if (fill) {
+        fill.style.width = `${pct}%`;
+        if (pct >= 90) fill.style.background = "#ef4444"; // red warning
+        else if (pct >= 70) fill.style.background = "#f59e0b"; // yellow warning
+        else fill.style.background = "#3b82f6"; // normal blue
+      }
+    } else {
+      $("mp-spend-cap").textContent = `$${parseFloat(limitUsed).toFixed(4)} / ไม่จำกัด`;
+      hide($("mp-progress-wrap"));
+    }
+  } catch (err) {
+    if (badge) {
+      badge.textContent = "ออฟไลน์";
+      badge.style.background = "rgba(239, 68, 68, 0.1)";
+      badge.style.color = "#ef4444";
+    }
+    $("mp-email").textContent = "ไม่สามารถเชื่อมต่อกับ Server ดึงข้อมูลบิล";
+  }
 }
 
 function selectModel(optionEl) {
@@ -164,7 +247,7 @@ async function saveToStorage(data) {
 async function loadSettings() {
   const data = await loadFromStorage([
     "llmProvider", "llmModel", "customModel",
-    "googleApiKey", "openrouterKey", "openaiKey", "ollamaUrl",
+    "googleApiKey", "openrouterKey", "openaiKey", "ollamaUrl", "maxplusKey",
     "serverUrl", "ocrModel", "ocrPipeline",
     "useMultimodal", "useGeminiOcr", "useAutoGlossary",
     "ocrProvider", "ocrModelSlug", "ocrApiKey"
@@ -187,6 +270,7 @@ async function loadSettings() {
   if (data.openrouterKey) $("input-openrouter-key").value = data.openrouterKey;
   if (data.openaiKey)     $("input-openai-key").value     = data.openaiKey;
   if (data.ollamaUrl)     $("input-ollama-url").value     = data.ollamaUrl;
+  if (data.maxplusKey)    $("input-maxplus-key").value    = data.maxplusKey;
 
   // Server
   $("input-server-url").value = data.serverUrl || "http://127.0.0.1:8745";
@@ -212,6 +296,11 @@ async function loadSettings() {
   // Advanced
   if (data.useMultimodal !== undefined) $("toggle-multimodal").checked = data.useMultimodal;
   if (data.useAutoGlossary !== undefined) $("toggle-auto-glossary").checked = data.useAutoGlossary;
+
+  // Trigger initial MaxPlus status pull if active
+  if (data.llmProvider === "maxplus") {
+    fetchMaxPlusUsage();
+  }
 
   // LLM OCR sub-settings
   if (data.ocrProvider)   setOcrProvider(data.ocrProvider);
@@ -244,6 +333,7 @@ async function syncSettingsToServer(data) {
     case "gemini":     api_key    = data.googleApiKey  || ""; break;
     case "openrouter": api_key    = data.openrouterKey || ""; break;
     case "openai":     api_key    = data.openaiKey     || ""; break;
+    case "maxplus":    api_key    = data.maxplusKey    || ""; break;
     case "ollama":     ollama_url = data.ollamaUrl     || "http://localhost:11434"; break;
   }
 
@@ -278,6 +368,7 @@ async function saveLLMSettings() {
     case "gemini":     apiKey = $("input-google-api-key").value.trim(); break;
     case "openrouter": apiKey = $("input-openrouter-key").value.trim(); break;
     case "openai":     apiKey = $("input-openai-key").value.trim(); break;
+    case "maxplus":    apiKey = $("input-maxplus-key").value.trim(); break;
     case "ollama":     apiKey = $("input-ollama-url").value.trim() || "http://localhost:11434"; break;
   }
 
@@ -289,6 +380,7 @@ async function saveLLMSettings() {
     openrouterKey: $("input-openrouter-key").value.trim(),
     openaiKey:     $("input-openai-key").value.trim(),
     ollamaUrl:     $("input-ollama-url").value.trim(),
+    maxplusKey:    $("input-maxplus-key").value.trim(),
   };
 
   await saveToStorage(storageData);
@@ -314,6 +406,9 @@ async function saveLLMSettings() {
 
     if (resp.ok) {
       showToast(`✨ บันทึกแล้ว — ${currentProvider} / ${model}`);
+      if (currentProvider === "maxplus") {
+        fetchMaxPlusUsage();
+      }
     } else {
       const err = await resp.json().catch(() => ({}));
       showToast(`บันทึกใน Extension แล้ว — Server: ${err.detail || resp.status}`, true);

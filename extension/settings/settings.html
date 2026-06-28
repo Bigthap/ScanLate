@@ -93,6 +93,11 @@
               <span class="provider-name">OpenAI</span>
               <span class="provider-tag">GPT Series</span>
             </button>
+            <button class="provider-card" data-provider="maxplus">
+              <span class="provider-logo">⚡</span>
+              <span class="provider-name">MaxPlus AI</span>
+              <span class="provider-tag">ccsk-... Key</span>
+            </button>
             <button class="provider-card" data-provider="ollama">
               <span class="provider-logo">🦙</span>
               <span class="provider-name">Ollama</span>
@@ -338,7 +343,94 @@
               <div class="model-pricing"><span class="price-per-ep free-tag">FREE</span></div>
             </div>
           </div>
-        </div>
+
+          <!-- MaxPlus AI Models -->
+          <div class="model-group" id="models-maxplus">
+            <div class="card-info-block">
+              <span class="info-icon">⚡</span>
+              <p>MaxPlus AI — รองรับ Claude และ GPT ผ่าน Gateway ส่วนตัว<br>ใส่ API Key ที่ขึ้นต้นด้วย <code>ccsk-</code></p>
+            </div>
+            <div class="model-option" data-model="gpt-5.5" data-input="2.50" data-output="10.00">
+              <div class="model-radio-wrap">
+                <div class="model-radio"></div>
+                <div class="model-info">
+                  <span class="model-name">GPT 5.5 ⭐</span>
+                  <span class="model-desc">โมเดลเรือธงรุ่นล่าสุด · เร็วและแม่นยำสูง</span>
+                </div>
+              </div>
+              <div class="model-pricing">
+                <span class="price-in">In $2.50</span>
+                <span class="price-out">Out $10.00</span>
+                <span class="price-per-ep">~1.01 ฿</span>
+              </div>
+            </div>
+            <div class="model-option" data-model="gpt-5.4-mini" data-input="0.15" data-output="0.60">
+              <div class="model-radio-wrap">
+                <div class="model-radio"></div>
+                <div class="model-info">
+                  <span class="model-name">GPT 5.4 Mini</span>
+                  <span class="model-desc">คุ้มค่าที่สุด · เร็วมาก · ประหยัดโทเค็น</span>
+                </div>
+              </div>
+              <div class="model-pricing">
+                <span class="price-in">In $0.15</span>
+                <span class="price-out">Out $0.60</span>
+                <span class="price-per-ep">~0.06 ฿</span>
+              </div>
+            </div>
+            <div class="model-option" data-model="claude-sonnet-4-6" data-input="3.00" data-output="15.00">
+              <div class="model-radio-wrap">
+                <div class="model-radio"></div>
+                <div class="model-info">
+                  <span class="model-name">Claude Sonnet 4.6</span>
+                  <span class="model-desc">ฉลาด · เร็ว · แปลไทยได้ธรรมชาติมาก</span>
+                </div>
+              </div>
+              <div class="model-pricing">
+                <span class="price-in">In $3.00</span>
+                <span class="price-out">Out $15.00</span>
+                <span class="price-per-ep">~1.50 ฿</span>
+              </div>
+            </div>
+            <div class="model-option" data-model="claude-sonnet-4-5" data-input="3.00" data-output="15.00">
+              <div class="model-radio-wrap">
+                <div class="model-radio"></div>
+                <div class="model-info">
+                  <span class="model-name">Claude Sonnet 4.5</span>
+                  <span class="model-desc">แปลภาษาเสถียร · ตอบกลับลื่นไหล</span>
+                </div>
+              </div>
+              <div class="model-pricing">
+                <span class="price-in">In $3.00</span>
+                <span class="price-out">Out $15.00</span>
+                <span class="price-per-ep">~1.50 ฿</span>
+              </div>
+            </div>
+            <div class="model-option" data-model="haiku" data-input="0.80" data-output="4.00">
+              <div class="model-radio-wrap">
+                <div class="model-radio"></div>
+                <div class="model-info">
+                  <span class="model-name">Claude Haiku</span>
+                  <span class="model-desc">ประหยัดสุดของตระกูล Claude · เร็วมาก</span>
+                </div>
+              </div>
+              <div class="model-pricing">
+                <span class="price-in">In $0.80</span>
+                <span class="price-out">Out $4.00</span>
+                <span class="price-per-ep">~0.41 ฿</span>
+              </div>
+            </div>
+            <div class="model-option model-custom" data-model="__custom__" data-input="0" data-output="0">
+              <div class="model-radio-wrap">
+                <div class="model-radio"></div>
+                <div class="model-info">
+                  <span class="model-name">⌨️ กรอก Model เอง</span>
+                  <span class="model-desc">Model slug ที่รองรับบน MaxPlus</span>
+                </div>
+              </div>
+              <div class="model-pricing"><span class="price-per-ep">—</span></div>
+            </div>
+          </div>
 
         <!-- Custom Model Input (shown when custom is selected) -->
         <div class="card hidden" id="custom-model-card">
@@ -377,6 +469,49 @@
             <div class="api-key-row hidden" id="key-ollama">
               <label>Ollama API URL</label>
               <input type="text" id="input-ollama-url" class="text-input" placeholder="http://localhost:11434" />
+            </div>
+            <div class="api-key-row hidden" id="key-maxplus">
+              <label>MaxPlus AI API Key</label>
+              <div class="key-input-wrap">
+                <input type="password" id="input-maxplus-key" class="text-input" placeholder="ccsk-..." />
+                <button class="btn-eye" data-target="input-maxplus-key">👁️</button>
+              </div>
+            </div>
+        </div>
+
+        <!-- MaxPlus Credit & Usage Tracker Dashboard -->
+        <div class="card hidden" id="maxplus-dashboard-card" style="margin-top: 15px; border-left: 4px solid #3b82f6; background: rgba(59, 130, 246, 0.03);">
+          <div class="card-label">
+            <span style="font-weight: bold; color: #2563eb;">💳 สถานะเครดิต MaxPlus AI (เรียลไทม์)</span>
+            <span class="cost-badge" id="mp-status-badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">กำลังเชื่อมต่อ...</span>
+          </div>
+          <div class="status-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px;">
+            <div class="status-item" style="display: flex; flex-direction: column; padding: 8px; background: rgba(255,255,255,0.6); border-radius: 6px;">
+              <span class="status-label" style="font-size: 10px; opacity: 0.7;">บัญชีอีเมล</span>
+              <span class="status-value" id="mp-email" style="font-size: 12px; font-weight: 600; word-break: break-all;">-</span>
+            </div>
+            <div class="status-item" style="display: flex; flex-direction: column; padding: 8px; background: rgba(255,255,255,0.6); border-radius: 6px;">
+              <span class="status-label" style="font-size: 10px; opacity: 0.7;">เครดิตคงเหลือ</span>
+              <span class="status-value" id="mp-credit" style="font-size: 14px; font-weight: bold; color: #10b981;">$0.00 USD</span>
+            </div>
+            <div class="status-item" style="display: flex; flex-direction: column; padding: 8px; background: rgba(255,255,255,0.6); border-radius: 6px;">
+              <span class="status-label" style="font-size: 10px; opacity: 0.7;">ใช้ไปกับ Key นี้ (Spend Cap)</span>
+              <span class="status-value" id="mp-spend-cap" style="font-size: 12px; font-weight: 600;">$0.00 / $0.00</span>
+            </div>
+            <div class="status-item" style="display: flex; flex-direction: column; padding: 8px; background: rgba(255,255,255,0.6); border-radius: 6px;">
+              <span class="status-label" style="font-size: 10px; opacity: 0.7;">การเรียกใช้สะสม</span>
+              <span class="status-value" id="mp-requests" style="font-size: 12px; font-weight: 600;">0 requests</span>
+            </div>
+          </div>
+          
+          <!-- Spend Cap Progress Bar -->
+          <div class="progress-bar-wrap" id="mp-progress-wrap" style="margin-top: 12px; display: none;">
+            <div style="display:flex; justify-content: space-between; font-size: 11px; opacity: 0.8; margin-bottom: 4px;">
+              <span>ความคืบหน้าโควตา API Key</span>
+              <span id="mp-progress-text" style="font-weight: 600; color: #2563eb;">0%</span>
+            </div>
+            <div class="progress-bar-bg" style="height: 6px; background: rgba(0,0,0,0.08); border-radius: 3px; overflow: hidden;">
+              <div class="progress-bar-fill" id="mp-progress-fill" style="height: 100%; width: 0%; background: #3b82f6; border-radius: 3px; transition: width 0.4s ease-out;"></div>
             </div>
           </div>
         </div>

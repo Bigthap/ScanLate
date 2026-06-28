@@ -194,11 +194,13 @@ def merge_close_regions(regions: list, max_dist_x=80, max_dist_y=60) -> list:
             
         merged_with_something = False
         for m in merged:
-            # Check overlap or proximity
-            x_overlap = max(r["minX"], m["minX"]) < min(r["maxX"], m["maxX"]) + max_dist_x
-            y_overlap = max(r["minY"], m["minY"]) < min(r["maxY"], m["maxY"]) + max_dist_y
+            # Compute actual pixel GAP between edges (negative = overlapping)
+            x_gap = max(r["minX"], m["minX"]) - min(r["maxX"], m["maxX"])
+            y_gap = max(r["minY"], m["minY"]) - min(r["maxY"], m["maxY"])
+            x_close = x_gap < max_dist_x
+            y_close = y_gap < max_dist_y
             
-            if x_overlap and y_overlap:
+            if x_close and y_close:
                 m["minX"] = min(m["minX"], r["minX"])
                 m["minY"] = min(m["minY"], r["minY"])
                 m["maxX"] = max(m["maxX"], r["maxX"])
@@ -296,6 +298,7 @@ async def translate_image(
     async with translation_semaphore:
         try:
             mit = mit_client.get_engine_client()
+            ocr_engine_type = "llm" if use_gemini_ocr_bool else "mit"
             skip_ocr_in_mit = (ocr_engine_type in ["llm", "win"])
             regions = await mit.get_ocr_regions(image_bytes, source_lang, ocr_model, skip_ocr=skip_ocr_in_mit)
             
@@ -437,11 +440,26 @@ async def translate_stream(
         # Check Cache first
         cached_data = cm.get(cache_key)
         if cached_data is not None:
-            # Send metadata
-            yield f"data: {json.dumps({'type': 'metadata', 'regions': cached_data['detected_texts']})}\n\n"
-            # Send cached translations as stream
-            for i, region in enumerate(cached_data['detected_texts']):
-                yield f"data: {json.dumps({'type': 'translation', 'index': i, 'text': region.get('translated_text', '')})}\n\n"
+            # Transform raw cached regions into the shape content.js expects:
+            # {bbox:[x0,y0,x1,y1], original, translated, text_color, angle, prob}
+            cached_regions = []
+            for r in cached_data.get('detected_texts', []):
+                if 'bbox' in r:
+                    bbox = r['bbox']
+                else:
+                    bbox = [r.get('minX', 0), r.get('minY', 0),
+                            r.get('maxX', 0), r.get('maxY', 0)]
+                cached_regions.append({
+                    "original":   r.get('original_text', r.get('original', '')),
+                    "translated": r.get('translated_text', r.get('translated', '')),
+                    "bbox":       bbox,
+                    "text_color": r.get('text_color', [0, 0, 0]),
+                    "angle":      r.get('angle', 0),
+                    "prob":       r.get('prob', 1.0),
+                })
+            yield f"data: {json.dumps({'type': 'metadata', 'regions': cached_regions})}\n\n"
+            for i, r in enumerate(cached_regions):
+                yield f"data: {json.dumps({'type': 'translation', 'index': i, 'text': r['translated']})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
             return
 
@@ -468,6 +486,10 @@ async def translate_stream(
                     # Best for Korean/English manhwa with oval/overlapping bubbles
                     from server.engine import rapidocr_client
                     regions = await rapidocr_client.run_ocr(image_bytes)
+                    # RapidOCR returns text line by line. We MUST merge close regions here
+                    # so that we get 1 bubble = 1 region. This prevents overlapping 
+                    # background masks and fixes translation index shifting!
+                    regions = merge_close_regions(regions)
                 else:
                     # Standard: default CRAFT + selected ocr_model
                     regions = await mit.get_ocr_regions(image_bytes, source_lang, ocr_model)
@@ -710,7 +732,7 @@ async def update_llm_settings(payload: dict):
     if not provider or not model:
         raise HTTPException(400, detail="provider and model are required")
 
-    valid_providers = {"gemini", "openrouter", "openai", "ollama"}
+    valid_providers = {"gemini", "openrouter", "openai", "ollama", "maxplus"}
     if provider not in valid_providers:
         raise HTTPException(400, detail=f"Invalid provider. Must be one of: {valid_providers}")
 
@@ -754,6 +776,52 @@ async def update_access_keys(payload: dict):
     except Exception as e:
         logger.error(f"Failed to update access keys: {e}")
         raise HTTPException(500, detail=str(e))
+
+@app.get("/settings/maxplus/usage", dependencies=[Depends(verify_localhost)])
+async def get_maxplus_usage():
+    """
+    Fetch live account usage, credit balance, and spend cap stats from MaxPlus AI.
+    """
+    if config.LLM_PROVIDER != "maxplus" or not config.MAXPLUS_API_KEY:
+        return {"active": False}
+        
+    headers = {"Authorization": f"Bearer {config.MAXPLUS_API_KEY}"}
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            # 1. Fetch account & key details
+            r_me = await client.get("https://api.maxplus-ai.cc/v1/me", headers=headers)
+            if r_me.status_code != 200:
+                return {"active": True, "error": f"Failed to fetch account info: {r_me.text[:200]}"}
+            me_data = r_me.json()
+            
+            # 2. Fetch usage stats
+            r_usage = await client.get("https://api.maxplus-ai.cc/v1/usage", headers=headers)
+            usage_data = r_usage.json() if r_usage.status_code == 200 else {}
+            
+            # Extract billing detail
+            user_info = me_data.get("user", {})
+            key_info = me_data.get("key", {})
+            
+            # Extract totals from usage
+            totals = usage_data.get("totals", {})
+            
+            return {
+                "active": True,
+                "email": user_info.get("email", "N/A"),
+                "display_name": user_info.get("display_name", ""),
+                "credit_usd": me_data.get("credit_usd", 0.0),
+                "used_usd": key_info.get("used_usd", 0.0),
+                "limit_usd": key_info.get("limit_usd"),
+                "limit_period": key_info.get("limit_period", "lifetime"),
+                "limit_used_usd": key_info.get("limit_used_usd", 0.0),
+                "total_cost": totals.get("total_cost", 0.0),
+                "total_tokens": totals.get("total_tokens", 0),
+                "request_count": totals.get("request_count", 0),
+                "cache_read_tokens": totals.get("cache_read_tokens", 0)
+            }
+        except Exception as e:
+            logger.error(f"Failed to query MaxPlus usage stats: {e}")
+            return {"active": True, "error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

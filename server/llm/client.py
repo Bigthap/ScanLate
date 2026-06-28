@@ -36,6 +36,9 @@ class LLMClient:
             os.environ["OPENROUTER_API_KEY"] = api_key
         elif provider == "openai":
             os.environ["OPENAI_API_KEY"] = api_key
+        elif provider == "maxplus":
+            config.MAXPLUS_API_KEY = api_key
+            os.environ["MAXPLUS_API_KEY"] = api_key
         elif provider == "ollama":
             config.OLLAMA_URL = ollama_url or "http://localhost:11434"
             
@@ -51,6 +54,8 @@ class LLMClient:
             os.environ["GOOGLE_API_KEY"] = config.GOOGLE_API_KEY
         if config.OPENROUTER_API_KEY:
             os.environ["OPENROUTER_API_KEY"] = config.OPENROUTER_API_KEY
+        if config.MAXPLUS_API_KEY:
+            os.environ["MAXPLUS_API_KEY"] = config.MAXPLUS_API_KEY
 
     def _get_active_api_key(self):
         if self.provider == "gemini":
@@ -59,6 +64,8 @@ class LLMClient:
             return config.OPENROUTER_API_KEY or os.environ.get("OPENROUTER_API_KEY")
         elif self.provider == "openai":
             return os.environ.get("OPENAI_API_KEY")
+        elif self.provider == "maxplus":
+            return config.MAXPLUS_API_KEY or os.environ.get("MAXPLUS_API_KEY")
         return None
 
     def _resolve_model_string(self) -> str:
@@ -91,10 +98,69 @@ class LLMClient:
             if not model.startswith("ollama/") and not model.startswith("ollama_chat/"):
                 model = f"ollama_chat/{model}"
 
+        elif provider == "maxplus":
+            # MaxPlus is OpenAI-compatible. Do NOT add openai/ prefix here —
+            # LiteLLM ignores api_base when the prefix is present.
+            # Instead, we pass custom_llm_provider + api_base in completion_kwargs.
+            pass  # Keep model slug as-is (e.g. claude-sonnet-4-6, gpt-4o-mini)
+
         # openai: model slugs like gpt-4o, gpt-4o-mini are auto-detected correctly
 
         logger.debug(f"Resolved model string: '{self.model}' → '{model}' (provider={provider})")
         return model
+
+    def _get_maxplus_routing(self) -> tuple[str, str]:
+        """
+        MaxPlus AI has two separate endpoints:
+          - Claude models  → Anthropic protocol  → https://api.maxplus-ai.cc
+          - GPT/other      → OpenAI protocol     → https://api.maxplus-ai.cc/v1
+        Returns (api_base, custom_llm_provider).
+        """
+        model = self.model.strip().lower()
+        if model.startswith("claude") or "haiku" in model:
+            return "https://api.maxplus-ai.cc", "anthropic"
+        else:
+            return "https://api.maxplus-ai.cc/v1", "openai"
+
+    def _compress_image(self, image_bytes: bytes) -> bytes:
+        """
+        Compress and resize image before sending to LLM.
+        This drastically reduces payload sizes from 2MB+ down to ~50-80KB.
+        """
+        if not image_bytes:
+            return b""
+        try:
+            import io
+            from PIL import Image
+            
+            # Load image from bytes
+            img = Image.open(io.BytesIO(image_bytes))
+            
+            # Convert RGBA to RGB if needed (JPEG doesn't support alpha channel)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+                
+            # Resize if dimensions exceed 800px
+            max_size = 800
+            w, h = img.size
+            if w > max_size or h > max_size:
+                if w > h:
+                    new_w = max_size
+                    new_h = int(h * (max_size / w))
+                else:
+                    new_h = max_size
+                    new_w = int(w * (max_size / h))
+                img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                
+            # Save compressed image
+            out_io = io.BytesIO()
+            img.save(out_io, format="JPEG", quality=60)
+            compressed = out_io.getvalue()
+            logger.info(f"LLM image compressed: {len(image_bytes)/1024:.1f}KB → {len(compressed)/1024:.1f}KB")
+            return compressed
+        except Exception as e:
+            logger.warning(f"Failed to compress image for LLM, using original: {e}")
+            return image_bytes
 
     async def translate_texts(self, texts: List[str], source_lang: str, profile_name: str = None, page_context: str = "", image_bytes: bytes = None) -> List[str]:
         """
@@ -128,8 +194,9 @@ class LLMClient:
 
         user_content = [{"type": "text", "text": user_prompt}]
         if image_bytes:
+            compressed_img = self._compress_image(image_bytes)
             import base64
-            b64_img = base64.b64encode(image_bytes).decode('utf-8')
+            b64_img = base64.b64encode(compressed_img).decode('utf-8')
             user_content.insert(0, {
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
@@ -141,10 +208,13 @@ class LLMClient:
         try:
             logger.info(f"Invoking LLM translation via LiteLLM ({self.model}) for {len(cleaned_texts)} blocks...")
             
-            # Setup custom API URL if Ollama is selected
+            # Setup custom API URL for Ollama or MaxPlus
             api_base = None
+            maxplus_provider = None
             if self.provider == "ollama":
                 api_base = config.OLLAMA_URL
+            elif self.provider == "maxplus":
+                api_base, maxplus_provider = self._get_maxplus_routing()
 
             # Normalize model string so LiteLLM routes to the correct provider.
             # LiteLLM auto-detects provider from the model prefix, so we must
@@ -176,43 +246,44 @@ class LLMClient:
                 }
             if self.provider in ("gemini", "openai"):
                 completion_kwargs["response_format"] = {"type": "json_object"}
+            if maxplus_provider:
+                # Claude → anthropic provider (api.maxplus-ai.cc)
+                # GPT   → openai provider   (api.maxplus-ai.cc/v1)
+                completion_kwargs["custom_llm_provider"] = maxplus_provider
 
-            # We enforce JSON mode if supported by model, or guide via prompt
-            response = await litellm.acompletion(**completion_kwargs)
-
-            response_text = response.choices[0].message.content.strip()
-            
-            # Parse JSON
-            translated_cleaned = self._parse_llm_json_response(response_text, len(cleaned_texts))
-            
-        except litellm.RateLimitError as e:
-            retry_wait = self._extract_retry_delay(e)
-            if retry_wait > 0:
-                logger.warning(
-                    f"Rate limit hit. Waiting {retry_wait:.1f}s then retrying batch... "
-                    f"(model={model_str})"
-                )
-                await asyncio.sleep(retry_wait)
+            # Retry loop for robust API handling
+            max_retries = 3
+            translated_cleaned = None
+            for attempt in range(max_retries):
                 try:
+                    # We enforce JSON mode if supported by model, or guide via prompt
                     response = await litellm.acompletion(**completion_kwargs)
                     response_text = response.choices[0].message.content.strip()
                     translated_cleaned = self._parse_llm_json_response(response_text, len(cleaned_texts))
-                except Exception as retry_err:
-                    logger.error(f"Retry after rate limit also failed: {retry_err}")
-                    # Return original texts — do NOT fallback per-block (wastes quota)
-                    translated_cleaned = list(cleaned_texts)
-            else:
-                # No retry delay info → daily quota exhausted, don't waste more calls
-                logger.error(
-                    f"Rate limit exceeded (likely daily quota). "
-                    f"Returning original texts to avoid wasting quota. Error: {e}"
-                )
-                translated_cleaned = list(cleaned_texts)
+                    break  # Success, break retry loop
+                except Exception as e:
+                    err_str = str(e)
+                    is_503 = "503" in err_str or "ServiceUnavailableError" in err_str or "service_unavailable" in err_str
+                    is_rate = "RateLimitError" in err_str or "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                    
+                    if (is_503 or is_rate) and attempt < max_retries - 1:
+                        wait_time = 2.0 * (attempt + 1)
+                        if is_rate:
+                            delay = self._extract_retry_delay(e)
+                            if delay > 0:
+                                wait_time = delay
+                        logger.warning(f"LLM call failed (attempt {attempt+1}/{max_retries}): {e}. Retrying in {wait_time:.1f}s...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error(f"LLM call final failure: {e}")
+                        # Fallback to individual line-by-line translation
+                        translated_cleaned = await self._fallback_translate_individually(cleaned_texts, system_prompt)
+                        break
 
         except Exception as e:
-            logger.error(f"LiteLLM completion failed: {e}. Falling back to individual translation...")
-            # Fallback to translate line-by-line in case of non-rate-limit failures
-            translated_cleaned = await self._fallback_translate_individually(cleaned_texts, system_prompt)
+            logger.error(f"LiteLLM setup or processing failed: {e}")
+            translated_cleaned = list(cleaned_texts)
 
         # Map back to original list length with empty slots preserved
         final_translations = ["" for _ in texts]
@@ -275,8 +346,9 @@ class LLMClient:
 
         user_content = [{"type": "text", "text": user_prompt}]
         if image_bytes:
+            compressed_img = self._compress_image(image_bytes)
             import base64
-            b64_img = base64.b64encode(image_bytes).decode('utf-8')
+            b64_img = base64.b64encode(compressed_img).decode('utf-8')
             user_content.insert(0, {
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
@@ -285,7 +357,13 @@ class LLMClient:
         try:
             logger.info(f"Invoking LLM translation STREAM via LiteLLM ({self.model}) for {len(cleaned_texts)} blocks...")
             
-            api_base = config.OLLAMA_URL if self.provider == "ollama" else None
+            api_base = None
+            maxplus_provider = None
+            if self.provider == "ollama":
+                api_base = config.OLLAMA_URL
+            elif self.provider == "maxplus":
+                api_base, maxplus_provider = self._get_maxplus_routing()
+
             model_str = self._resolve_model_string()
             self._setup_keys()
             active_key = self._get_active_api_key()
@@ -313,6 +391,10 @@ class LLMClient:
                 }
             if self.provider in ("gemini", "openai"):
                 completion_kwargs["response_format"] = {"type": "json_object"}
+            if maxplus_provider:
+                # Claude → anthropic provider (api.maxplus-ai.cc)
+                # GPT   → openai provider   (api.maxplus-ai.cc/v1)
+                completion_kwargs["custom_llm_provider"] = maxplus_provider
 
             max_retries = 3
             for attempt in range(max_retries):
@@ -368,12 +450,18 @@ class LLMClient:
                         actual_error = e.original_exception
                         
                     err_str = str(e)
-                    if "RateLimitError" in err_str or "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                        retry_wait = self._extract_retry_delay(e)
-                        if retry_wait > 0 and attempt < max_retries - 1:
-                            logger.warning(f"Rate limit hit during stream. Waiting {retry_wait:.1f}s then retrying... (Attempt {attempt+1}/{max_retries})")
-                            await asyncio.sleep(retry_wait)
-                            continue
+                    is_503 = "503" in err_str or "ServiceUnavailableError" in err_str or "service_unavailable" in err_str
+                    is_rate = "RateLimitError" in err_str or "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                    
+                    if (is_503 or is_rate) and attempt < max_retries - 1:
+                        wait_time = 2.0 * (attempt + 1)
+                        if is_rate:
+                            delay = self._extract_retry_delay(e)
+                            if delay > 0:
+                                wait_time = delay
+                        logger.warning(f"Rate limit or 503 hit during stream. Waiting {wait_time:.1f}s then retrying... (Attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                        continue
                             
                     logger.error(f"Streaming LLM failed: {e}")
                     yield json.dumps({"error": str(e)})

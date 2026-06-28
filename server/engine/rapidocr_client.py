@@ -81,7 +81,7 @@ def _parse_result(raw_result) -> List[Dict[str, Any]]:
             "original_text": text,
             "fg_color": [0, 0, 0],
             "bg_color": [255, 255, 255],
-            "text_color": [0, 0, 0],   # required by main.py pipeline
+            "text_color": {"fg": [0, 0, 0], "bg": [255, 255, 255]},  # match mit_client format
             "alignment": "center",
             "font_size": 40,
             "angle": 0,                # RapidOCR handles rotation internally
@@ -98,7 +98,10 @@ def run_ocr_sync(image_bytes: bytes) -> List[Dict[str, Any]]:
     result, elapse = engine(img)
     regions = _parse_result(result)
     total_ms = sum(elapse) if isinstance(elapse, (list, tuple)) else elapse
-    logger.info(f"RapidOCR: {len(regions)} regions detected in {total_ms:.3f}s")
+    if total_ms is not None:
+        logger.info(f"RapidOCR: {len(regions)} regions detected in {total_ms:.3f}s")
+    else:
+        logger.info(f"RapidOCR: {len(regions)} regions detected.")
     return regions
 
 

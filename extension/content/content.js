@@ -102,14 +102,14 @@
   // ──────────────────────────────────────────────────────────────────────
 
   function findMangaImages() {
-    // Scan all images on the page
-    const imgs = Array.from(document.querySelectorAll("img"));
+    // Scan all images AND canvases on the page
+    const imgs = Array.from(document.querySelectorAll("img, canvas"));
     
     // Filter based on size criteria (typically manga pages are vertical and large)
     return imgs.filter(img => {
       // Ignore tiny icons, badges, UI elements
-      const width = img.clientWidth || img.naturalWidth || 0;
-      const height = img.clientHeight || img.naturalHeight || 0;
+      const width = img.clientWidth || img.naturalWidth || img.width || 0;
+      const height = img.clientHeight || img.naturalHeight || img.height || 0;
       
       // Manga pages are typically > 500px wide, and height > width
       const isLargeEnough = width > 500 && height > 400;
@@ -221,11 +221,20 @@
     }
   }
 
-  // Binary search auto-font sizing to fit speech text inside box boundaries
+  // Auto-font sizing: smarter scaling to prevent single words from exploding
   function calculateOptimalFontSize(text, boxWidth, boxHeight) {
-    let low = 7;
-    let high = 80;
-    let optimal = 11;
+    if (!text) return 14;
+    
+    // Estimate area needed for the text based on character count
+    // A typical Thai character takes about (fontSize * 0.6) width.
+    const charCount = text.length;
+    
+    // Max safe font size relative to box width, but hard-capped at 32px
+    // SFX boxes are often very tall but only have 2-3 characters.
+    const maxFontSize = Math.min(32, boxWidth * 0.4); 
+    let low = 8;
+    let high = maxFontSize;
+    let optimal = 14; // Default safe size
     
     // Create temporary offscreen element for measurement
     const measurer = document.createElement("div");
@@ -239,7 +248,7 @@
       measurer.style.fontSize = `${mid}px`;
       
       // We check if rendered height overflows coordinate boundaries
-      if (measurer.offsetHeight <= boxHeight) {
+      if (measurer.offsetHeight <= boxHeight * 1.1) { // 10% leniency for height
         optimal = mid;
         low = mid + 1; // Try bigger font size
       } else {
@@ -248,6 +257,12 @@
     }
     
     document.body.removeChild(measurer);
+    
+    // For very short text (SFX), don't force it to fill the box if it looks unnaturally huge
+    if (charCount < 5 && optimal > 24) {
+        return Math.min(optimal, 24); 
+    }
+    
     return optimal;
   }
 
@@ -278,9 +293,10 @@
     detectedTexts.forEach((box, index) => {
       let [minX, minY, maxX, maxY] = box.bbox;
       
-      // Inflate bounding box slightly to ensure original text is fully covered
-      const paddingX = 8;
-      const paddingY = 6;
+      // Inflate bounding box to ensure original text is fully covered (Masking)
+      // Use larger horizontal padding since manga text often bleeds past detected edges
+      const paddingX = 20;
+      const paddingY = 18;
       minX = Math.max(0, minX - paddingX);
       minY = Math.max(0, minY - paddingY);
       maxX = Math.min(naturalWidth, maxX + paddingX);
@@ -302,7 +318,7 @@
       const boxHeightPx = (heightPercent / 100) * currentHeightPx;
       const optimalFontSize = calculateOptimalFontSize(box.translated, boxWidthPx, boxHeightPx);
       
-      // 3. Render CSS Overlay bubble
+      // 3. Render CSS Overlay mask
       const bubble = document.createElement("div");
       bubble.className = "scanlate-bubble-overlay";
       if (debugMode) {
@@ -313,21 +329,27 @@
       bubble.style.width = `${widthPercent}%`;
       bubble.style.height = `${heightPercent}%`;
       bubble.style.backgroundColor = colors.bg;
-      bubble.style.color = colors.fg;
-      bubble.style.fontSize = `${optimalFontSize}px`;
       
       // Save base font size on the bubble element for proportional scaling on resize
       bubble._baseFontSize = optimalFontSize;
       bubble.dataset.index = index;
       
+      // 4. Render Text Container inside the mask
+      const textContainer = document.createElement("div");
+      textContainer.className = "scanlate-bubble-text";
+      textContainer.style.color = colors.fg;
+      textContainer.style.fontSize = `${optimalFontSize}px`;
+      
       // Multi-line center typography for manga text
       if (!box.translated) {
-        bubble.innerHTML = '<span class="scanlate-dots" style="animation: pulse 1.5s infinite;">...</span>';
+        textContainer.innerHTML = '<span class="scanlate-dots" style="animation: pulse 1.5s infinite;">...</span>';
       } else {
-        bubble.innerText = box.translated;
+        textContainer.innerText = box.translated;
       }
       
-      // Rotate if text was vertical or angled
+      bubble.appendChild(textContainer);
+      
+      // Rotate if text was vertical or angled (apply to the mask, which rotates child too)
       if (box.angle && Math.abs(box.angle) > 5) {
         bubble.style.transform = `rotate(${box.angle}deg)`;
       }
@@ -418,13 +440,17 @@
         const boxHeightPx = (heightPercent / 100) * currentHeightPx;
         
         const optimalFontSize = calculateOptimalFontSize(text, boxWidthPx, boxHeightPx);
-        bubble.style.fontSize = `${optimalFontSize}px`;
         bubble._baseFontSize = optimalFontSize;
         
-        if (!text) {
-            bubble.innerHTML = '<span class="scanlate-dots" style="animation: pulse 1.5s infinite;">...</span>';
-        } else {
-            bubble.innerText = text;
+        // Find the text container inside the bubble
+        const textContainer = bubble.querySelector('.scanlate-bubble-text');
+        if (textContainer) {
+            textContainer.style.fontSize = `${optimalFontSize}px`;
+            if (!text) {
+                textContainer.innerHTML = '<span class="scanlate-dots" style="animation: pulse 1.5s infinite;">...</span>';
+            } else {
+                textContainer.innerText = text;
+            }
         }
     }
   }
@@ -573,7 +599,7 @@
       ]);
       if (stored.ocrModel) ocrModel = stored.ocrModel;
       useMultimodal = !!stored.useMultimodal;
-      useGeminiOcr = stored.useGeminiOcr !== undefined ? !!stored.useGeminiOcr : true;
+      useGeminiOcr = stored.useGeminiOcr !== undefined ? !!stored.useGeminiOcr : false;
       useAutoGlossary = !!stored.useAutoGlossary;
       if (stored.ocrProvider)   ocrProvider   = stored.ocrProvider;
       if (stored.ocrModelSlug)  ocrModelSlug  = stored.ocrModelSlug;
@@ -597,79 +623,103 @@
 
     let translatedCount = 0;
     
-    // Process all images concurrently. 
-    // The browser's connection limit (usually 6) and the backend's OCR semaphore 
-    // will naturally pipeline the requests (OCR -> LLM Stream) without exploding VRAM.
-    const translationPromises = detectedImages.map(async (img, i) => {
-      const src = img.currentSrc || img.src || img.getAttribute("data-src");
-      if (!src) {
-        console.warn(`ScanLate: Skipping image at index ${i} because it has no source URL.`);
-        return;
-      }
-      
-      // Add visual loader spinner overlay on top of image
-      const wrapper = wrapMangaImage(img);
-      const loader = document.createElement("div");
-      loader.className = "scanlate-image-loader";
-      loader.innerHTML = `
-        <div class="scanlate-spinner"></div>
-        <div class="scanlate-loader-text">กำลังแปลรูปที่ ${i + 1}/${detectedImages.length}...</div>
-      `;
-      wrapper.appendChild(loader);
-
-      try {
-        await new Promise((resolve, reject) => {
-            currentTranslationStreams[src] = {
-                img: img,
-                resolve: resolve,
-                reject: reject,
-                loader: loader
-            };
-
-            chrome.runtime.sendMessage({
-              action: "translateImage",
-              imageUrl: src,
-              sourceLang,
-              profileName,
-              ocrModel,
-              useMultimodal,
-              useGeminiOcr,
-              useAutoGlossary,
-              ocrProvider,
-              ocrModelSlug,
-              ocrApiKey,
-              ocrPipeline,
-              imageIndex: i + 1,
-              totalImages: detectedImages.length
-
-            }).then(translateRes => {
-              if (!translateRes || !translateRes.success) {
-                 reject(new Error(translateRes ? translateRes.error : "Translation proxy returned error status"));
-              } else if (!translateRes.streaming) {
-                 // Fallback for non-streaming (older version compatibility)
-                 if (currentTranslationStreams[src].loader) currentTranslationStreams[src].loader.remove();
-                 renderTranslationOverlays(img, translateRes.data.detected_texts || []);
-                 resolve();
-              }
-            }).catch(reject);
-        });
+    // Process images using a concurrency queue to prevent browser connection drops
+    // and manga site rate-limiting (which causes random images to fail).
+    // NOTE: MIT engine (manga-image-translator) uses a process-level Lock + Nonce system
+    // that breaks under high concurrency. Keep this at 3 to avoid "Nonce does not match" errors.
+    const MAX_CONCURRENT = 3;
+    let currentIndex = 0;
+    
+    const worker = async () => {
+      while (currentIndex < detectedImages.length) {
+        const i = currentIndex++;
+        const img = detectedImages[i];
         
-        // Increment and broadcast success
-        translatedCount++;
-        chrome.runtime.sendMessage({
-          action: "updateTabState",
-          updates: {
-            translatedCount: translatedCount
+        let src = img.currentSrc || img.src || img.getAttribute("data-src") || img.getAttribute("data-original-src");
+        
+        // If the element is a canvas and we couldn't find a source URL, try to extract its data
+        if (img.tagName.toLowerCase() === 'canvas' && !src) {
+          try {
+            src = img.toDataURL("image/jpeg", 0.9);
+          } catch (e) {
+            console.error("ScanLate: Failed to read canvas data (likely tainted by CORS)", e);
           }
-        });
-        
-      } catch (err) {
-        console.error(`ScanLate: Failed to translate image index ${i}:`, err);
-        if (loader.parentNode) loader.remove();
-      }
-    });
+        }
 
-    await Promise.all(translationPromises);
+        if (!src) {
+          console.warn(`ScanLate: Skipping image at index ${i} because it has no source URL or canvas data.`);
+          continue;
+        }
+        
+        // Add visual loader spinner overlay on top of image
+        const wrapper = wrapMangaImage(img);
+        const loader = document.createElement("div");
+        loader.className = "scanlate-image-loader";
+        loader.innerHTML = `
+          <div class="scanlate-spinner"></div>
+          <div class="scanlate-loader-text">กำลังแปลรูปที่ ${i + 1}/${detectedImages.length}...</div>
+        `;
+        wrapper.appendChild(loader);
+
+        try {
+          await new Promise((resolve, reject) => {
+              currentTranslationStreams[src] = {
+                  img: img,
+                  resolve: resolve,
+                  reject: reject,
+                  loader: loader
+              };
+
+              chrome.runtime.sendMessage({
+                action: "translateImage",
+                imageUrl: src,
+                sourceLang,
+                profileName,
+                ocrModel,
+                useMultimodal,
+                useGeminiOcr,
+                useAutoGlossary,
+                ocrProvider,
+                ocrModelSlug,
+                ocrApiKey,
+                ocrPipeline,
+                imageIndex: i + 1,
+                totalImages: detectedImages.length
+
+              }).then(translateRes => {
+                if (!translateRes || !translateRes.success) {
+                   reject(new Error(translateRes ? translateRes.error : "Translation proxy returned error status"));
+                } else if (!translateRes.streaming) {
+                   // Fallback for non-streaming (older version compatibility)
+                   if (currentTranslationStreams[src].loader) currentTranslationStreams[src].loader.remove();
+                   renderTranslationOverlays(img, translateRes.data.detected_texts || []);
+                   resolve();
+                }
+              }).catch(reject);
+          });
+          
+          // Increment and broadcast success
+          translatedCount++;
+          chrome.runtime.sendMessage({
+            action: "updateTabState",
+            updates: {
+              translatedCount: translatedCount
+            }
+          });
+          
+        } catch (err) {
+          console.error(`ScanLate: Failed to translate image index ${i}:`, err);
+          if (loader.parentNode) loader.remove();
+        }
+      }
+    };
+
+    const workers = [];
+    for (let i = 0; i < Math.min(MAX_CONCURRENT, detectedImages.length); i++) {
+      workers.push(worker());
+    }
+
+    await Promise.all(workers);
 
     // Complete pipeline
     chrome.runtime.sendMessage({

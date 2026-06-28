@@ -25,21 +25,29 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
   box-sizing: border-box;
-  overflow: hidden;
-  padding: 4px;
-  line-height: 1.25;
+  overflow: hidden; /* Clip text inside the mask, preventing bleed */
+  border-radius: 3px; /* Minimal rounding — sharp corners cover text edges fully */
+  transition: opacity 0.25s ease-in-out;
+  animation: fadeInBubble 0.25s ease-out;
+  pointer-events: auto; /* Allow hovering/selecting */
+}
+
+/* 3.1 Inner Text Container */
+.scanlate-bubble-text {
+  position: relative;
+  width: 100%;
+  max-width: 100%; /* Must not exceed mask width — prevents text bleeding outside */
+  text-align: center;
+  line-height: 1.4; /* Better spacing for Thai script */
   font-family: 'Kanit', 'Kanit-Bold', 'Helvetica Neue', sans-serif;
-  font-weight: 700; /* Bold style for manga font readability */
+  font-weight: 700;
   word-wrap: break-word;
   word-break: break-word;
   user-select: text;
-  pointer-events: auto; /* Allow selecting text inside overlays */
-  border-radius: 6px;
-  box-shadow: 0 0 1px 1px rgba(0, 0, 0, 0.05); /* Slight shadow to blur edges */
-  transition: opacity 0.25s ease-in-out;
-  animation: fadeInBubble 0.25s ease-out;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  z-index: 2;
 }
 
 /* 4. Canvas Measurement Helper (Offscreen) */
